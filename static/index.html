@@ -41,6 +41,27 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 /* Map */
 #map-container { flex: 62; position: relative; }
 #map { width: 100%; height: 100%; }
+
+/* Places search overlay (top-center of the map) */
+#places-search { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 5; width: min(380px, 60%); }
+#places-search .places-icon { position: absolute; left: 12px; top: 9px; color: #5f6368; font-size: 16px; pointer-events: none; }
+#places-input { width: 100%; box-sizing: border-box; height: 38px; padding: 0 34px; border: 1px solid #dadce0;
+  border-radius: 22px; background: #fff; font-size: 14px; color: #202124; box-shadow: 0 1px 4px rgba(0,0,0,.18); outline: none; }
+#places-input:focus { border-color: #4f8cff; box-shadow: 0 1px 6px rgba(79,140,255,.35); }
+.places-clear { position: absolute; right: 8px; top: 7px; width: 24px; height: 24px; border: none; background: transparent;
+  color: #5f6368; font-size: 18px; line-height: 1; cursor: pointer; display: none; }
+#places-input:not(:placeholder-shown) ~ .places-clear { display: block; }
+#places-dropdown { position: absolute; top: 42px; left: 0; right: 0; background: #fff; border-radius: 10px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.22); overflow: hidden; display: none; }
+#places-dropdown.open { display: block; }
+.places-row { padding: 8px 12px; cursor: pointer; font-size: 13px; }
+.places-row.active, .places-row:hover { background: #f1f5fb; }
+.places-row .main { color: #202124; }
+.places-row .sec { color: #80868b; font-size: 12px; }
+.places-row.empty { color: #80868b; cursor: default; }
+#places-error { position: absolute; top: 42px; left: 12px; font-size: 12px; color: #d93025; background: #fff;
+  padding: 2px 8px; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.15); display: none; }
+#places-error.show { display: block; }
 #map-no-key {
   display: none; position: absolute; inset: 0; background: #e8ecf0;
   align-items: center; justify-content: center; text-align: center; color: #64748b; font-size: 15px;
@@ -232,6 +253,13 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
     <div id="map-container">
       <div id="map"></div>
       <div id="map-no-key"><div class="no-maps-msg">No Google Maps API key configured.<br>Set <code>GOOGLE_MAPS_JS_KEY</code> in your environment and restart the server.</div></div>
+      <div id="places-search">
+        <span class="places-icon">⌕</span>
+        <input id="places-input" type="text" placeholder="Search place or lat, lng" autocomplete="off" spellcheck="false"/>
+        <button class="places-clear" tabindex="-1" title="Clear">×</button>
+        <div id="places-error"></div>
+        <div id="places-dropdown"></div>
+      </div>
     </div>
 
     <!-- Panel -->
@@ -280,6 +308,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 
 // ── State ──────────────────────────────────────────────────────────
 let googleMap = null;
+let MAPS_KEY = '';               // captured at config load; used as X-Goog-Api-Key for Places REST
 let projectData = null;          // full project response {project, corridors, segments}
 let currentProjectId = null;
 let activeFilter = 'all';        // 'all' | 'unnamed' | 'named'
@@ -759,6 +788,170 @@ function initMapClickDeselect() {
     deselectCorridor();
   });
   googleMap.addListener('zoom_changed', updateDirMarkers);
+}
+
+// ── Places search (new Places API, browser REST) ───────────────────
+const PLACES_BASE = 'https://places.googleapis.com/v1';
+let searchMarker = null;
+let placesSessionToken = null;
+let acResults = [];   // current autocomplete predictions
+let acIndex = -1;     // highlighted dropdown row
+let placesDebounce = null;
+
+function newSessionToken() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
+function looksLikeCoords(s) {
+  const parts = (s || '').trim().split(/[,\s]+/).filter(Boolean);
+  return parts.length === 2 && !isNaN(parseFloat(parts[0])) && !isNaN(parseFloat(parts[1]));
+}
+
+function parseCoords(s) {
+  const parts = (s || '').trim().split(/[,\s]+/).filter(Boolean);
+  if (parts.length < 2) return { error: 'Enter both lat and lng' };
+  if (parts.length > 2) return { error: 'Use: lat, lng' };
+  const lat = parseFloat(parts[0]), lng = parseFloat(parts[1]);
+  if (isNaN(lat) || isNaN(lng)) return { error: 'Invalid numbers' };
+  if (Math.abs(lat) > 90) return { error: 'Latitude must be -90..90' };
+  if (Math.abs(lng) > 180) return { error: 'Longitude must be -180..180' };
+  return { lat, lng };
+}
+
+async function placesAutocomplete(input) {
+  const c = googleMap.getCenter();
+  const res = await fetch(`${PLACES_BASE}/places:autocomplete`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': MAPS_KEY,
+      'X-Goog-FieldMask': 'suggestions.placePrediction.placeId,suggestions.placePrediction.text,suggestions.placePrediction.structuredFormat'
+    },
+    body: JSON.stringify({
+      input, sessionToken: placesSessionToken,
+      locationBias: { circle: { center: { latitude: c.lat(), longitude: c.lng() }, radius: 50000 } }
+    })
+  });
+  if (!res.ok) throw new Error('autocomplete ' + res.status);
+  const j = await res.json();
+  return (j.suggestions || []).map(s => s.placePrediction).filter(Boolean);
+}
+
+async function placeLocation(placeId) {
+  const res = await fetch(
+    `${PLACES_BASE}/places/${encodeURIComponent(placeId)}?sessionToken=${encodeURIComponent(placesSessionToken || '')}`,
+    { headers: { 'X-Goog-Api-Key': MAPS_KEY, 'X-Goog-FieldMask': 'location' } });
+  if (!res.ok) throw new Error('details ' + res.status);
+  return (await res.json()).location;
+}
+
+function showSearchMarker(lat, lng) {
+  if (searchMarker) searchMarker.setMap(null);
+  searchMarker = new google.maps.Marker({ position: { lat, lng }, map: googleMap, zIndex: 9999 });
+  googleMap.panTo({ lat, lng });
+  if ((googleMap.getZoom() || 0) < 14) googleMap.setZoom(16);
+}
+
+function closeDropdown() {
+  const dd = document.getElementById('places-dropdown');
+  dd.classList.remove('open'); dd.innerHTML = '';
+}
+
+function showCoordError(msg) {
+  const e = document.getElementById('places-error');
+  if (msg) { e.textContent = msg; e.classList.add('show'); } else { e.classList.remove('show'); }
+}
+
+function clearSearch() {
+  const inp = document.getElementById('places-input');
+  inp.value = '';
+  closeDropdown();
+  showCoordError('');
+  if (searchMarker) { searchMarker.setMap(null); searchMarker = null; }
+  placesSessionToken = null;
+}
+
+function renderDropdown() {
+  const dd = document.getElementById('places-dropdown');
+  if (!acResults.length) {
+    dd.innerHTML = '<div class="places-row empty">No matches</div>'; dd.classList.add('open'); return;
+  }
+  dd.innerHTML = acResults.map((p, i) => {
+    const sf = p.structuredFormat || {};
+    const main = (sf.mainText && sf.mainText.text) || (p.text && p.text.text) || '';
+    const sec = (sf.secondaryText && sf.secondaryText.text) || '';
+    return `<div class="places-row${i === acIndex ? ' active' : ''}" data-i="${i}">
+      <div class="main">${esc(main)}</div>${sec ? `<div class="sec">${esc(sec)}</div>` : ''}</div>`;
+  }).join('');
+  dd.classList.add('open');
+  dd.querySelectorAll('.places-row[data-i]').forEach(row =>
+    row.addEventListener('mousedown', e => { e.preventDefault(); selectPrediction(Number(row.dataset.i)); }));
+}
+
+async function selectPrediction(i) {
+  const p = acResults[i]; if (!p) return;
+  const inp = document.getElementById('places-input');
+  inp.value = (p.text && p.text.text) || '';
+  closeDropdown();
+  try {
+    const loc = await placeLocation(p.placeId);
+    if (loc) showSearchMarker(loc.latitude, loc.longitude);
+  } catch (err) { console.error('[places] details', err); showCoordError("Couldn't load that place"); }
+  placesSessionToken = null; // session ends on selection
+}
+
+async function runAutocomplete(value) {
+  if (!placesSessionToken) placesSessionToken = newSessionToken();
+  try {
+    acResults = await placesAutocomplete(value);
+    acIndex = -1;
+    renderDropdown();
+  } catch (err) {
+    console.error('[places] autocomplete', err);
+    acResults = []; closeDropdown();
+    if (String(err.message).includes('403')) {
+      const dd = document.getElementById('places-dropdown');
+      dd.innerHTML = '<div class="places-row empty">Search unavailable</div>'; dd.classList.add('open');
+    }
+  }
+}
+
+function onPlacesInput(value) {
+  clearTimeout(placesDebounce);
+  showCoordError('');
+  if (!value.trim()) { closeDropdown(); if (searchMarker) { searchMarker.setMap(null); searchMarker = null; } return; }
+  if (looksLikeCoords(value)) { closeDropdown(); return; }   // coordinate mode: wait for Enter
+  if (value.trim().length < 3) { closeDropdown(); return; }
+  placesDebounce = setTimeout(() => runAutocomplete(value.trim()), 300);
+}
+
+function onPlacesKeydown(e) {
+  const inp = e.target;
+  if (e.key === 'Escape') { clearSearch(); inp.blur(); return; }
+  if (looksLikeCoords(inp.value)) {
+    if (e.key === 'Enter') {
+      const r = parseCoords(inp.value);
+      if (r.error) { showCoordError(r.error); }
+      else { showCoordError(''); showSearchMarker(r.lat, r.lng); closeDropdown(); }
+    }
+    return;
+  }
+  if (e.key === 'ArrowDown') { e.preventDefault(); if (acResults.length) { acIndex = Math.min(acIndex + 1, acResults.length - 1); renderDropdown(); } }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); if (acResults.length) { acIndex = Math.max(acIndex - 1, -1); renderDropdown(); } }
+  else if (e.key === 'Enter') { e.preventDefault(); if (acResults.length) selectPrediction(acIndex >= 0 ? acIndex : 0); }
+}
+
+function initPlacesSearch() {
+  const inp = document.getElementById('places-input');
+  if (!inp) return;
+  inp.addEventListener('input', () => onPlacesInput(inp.value));
+  inp.addEventListener('keydown', onPlacesKeydown);
+  document.querySelector('#places-search .places-clear')
+    .addEventListener('click', () => { clearSearch(); inp.focus(); });
+  document.addEventListener('click', e => { if (!e.target.closest('#places-search')) closeDropdown(); });
 }
 
 // ── Tooltip mousemove on document ──────────────────────────────────
@@ -1304,6 +1497,7 @@ function initGoogleMap() {
     zoomControl: true
   });
   initMapClickDeselect();
+  initPlacesSearch();
   mapsLoaded = true;
 
   // If a project is already loaded, render
@@ -1323,6 +1517,7 @@ async function boot() {
   try {
     const cfg = await apiFetch('/api/config');
     mapsKey = cfg.maps_key || '';
+    MAPS_KEY = mapsKey;
   } catch(e) {
     console.warn('Could not fetch /api/config:', e.message);
   }
