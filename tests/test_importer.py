@@ -41,3 +41,16 @@ def test_twin_detection_links_both_ways():
 
 def test_normalise_strips_and_expands():
     assert importer.normalise("13-55, 132 Feet Ring Rd") == "132 Feet Ring Road"
+
+def test_require_synced_false_includes_unsynced():
+    w = importer.build_workset(load(), require_synced=False)
+    cors = w["corridors"]
+    seg_uuids = {s["uuid"] for c in cors for s in c["segments"]} | {s["uuid"] for s in w["standalone"]}
+    # every leaf kept, including the ones dropped in synced mode
+    assert "DROP" in seg_uuids          # unsynced standalone — dropped in synced mode
+    assert "P2-S2" in seg_uuids         # broken-parent's unsynced child — kept now
+    assert len(seg_uuids) == 8
+    # P2 now forms a full corridor (both children), not standalone
+    assert len(cors) == 2
+    p2 = [c for c in cors if {s["uuid"] for s in c["segments"]} == {"P2-S1", "P2-S2"}]
+    assert len(p2) == 1
