@@ -1,7 +1,8 @@
-import json, os, math
+import json, os, math, io
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, UploadFile, File, Body
-import db, importer
+from fastapi.responses import StreamingResponse
+import db, importer, export
 
 load_dotenv()  # read keys from root .env if present
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -118,5 +119,19 @@ def patch_corridor(cid: int, body: dict = Body(...)):
     c = conn(); c.execute("UPDATE corridors SET name=? WHERE id=?", (name, cid))
     c.commit(); c.close()
     return {"ok": True}
+
+@app.get("/api/projects/{pid}/export")
+def export_project(pid: int):
+    c = conn()
+    p = c.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone()
+    if not p:
+        raise HTTPException(404, "no such project")
+    corrs = [dict(r) for r in c.execute("SELECT * FROM corridors WHERE project_id=?", (pid,))]
+    segs = [dict(r) for r in c.execute("SELECT * FROM segments WHERE project_id=?", (pid,))]
+    c.close()
+    payload = export.build_export(dict(p), corrs, segs)
+    buf = io.BytesIO(json.dumps(payload, indent=2).encode())
+    return StreamingResponse(buf, media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="project_{pid}_named.json"'})
 
 # static frontend (mounted last; added in Task 9)
