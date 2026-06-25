@@ -336,15 +336,13 @@ function updateFilterCounts() {
   const named = segs.filter(s => s.named).length;
   const unnamed = all - named;
 
-  // Count by corridor visibility
-  // Filter counts: for "all" corridors/standalones
-  const visibleCorrs = getVisibleCorridors();
+  // Count by unified items (corridors + standalone)
+  const visibleItems = getVisibleCorridors();
   let countAll = 0, countNamed = 0, countUnnamed = 0;
-  visibleCorrs.forEach(item => {
-    const segsOfItem = projectData.segments.filter(s => s.corridor_id === item.id);
+  visibleItems.forEach(item => {
+    const segsOfItem = segmentsOfItem(item);
     countAll++;
-    const allNamed = segsOfItem.every(s => s.named);
-    const anyNamed = segsOfItem.some(s => s.named);
+    const allNamed = segsOfItem.length > 0 && segsOfItem.every(s => s.named);
     if (allNamed) countNamed++;
     else countUnnamed++;
   });
@@ -355,14 +353,49 @@ function updateFilterCounts() {
 }
 
 // ── Data helpers ───────────────────────────────────────────────────
-function getVisibleCorridors() {
+
+// Build synthetic standalone items from segments with corridor_id === null.
+// Each becomes a single-segment item with id 'sa_<seg.id>' and isStandalone:true.
+function getStandaloneItems() {
   if (!projectData) return [];
-  // Corridors in order, then standalone segments (corridor_id pointing to a standalone-only corridor)
-  return projectData.corridors;
+  return projectData.segments
+    .filter(s => s.corridor_id === null)
+    .map(s => ({
+      id: 'sa_' + s.id,
+      isStandalone: true,
+      _segId: s.id,
+      cor_code: null,
+      name: null,
+      suggested: null
+    }));
 }
 
+// Returns the unified list: real corridors first, then one item per standalone segment.
+function getVisibleCorridors() {
+  if (!projectData) return [];
+  return [...projectData.corridors, ...getStandaloneItems()];
+}
+
+// Return segments belonging to an item (corridor or standalone).
+function segmentsOfItem(item) {
+  if (!projectData) return [];
+  if (item.isStandalone) {
+    const seg = projectData.segments.find(s => s.id === item._segId);
+    return seg ? [seg] : [];
+  }
+  return projectData.segments
+    .filter(s => s.corridor_id === item.id)
+    .sort((a, b) => a.seq - b.seq);
+}
+
+// Legacy alias used internally (accepts a real corridor db id or 'sa_' synthetic id).
 function segmentsOfCorridor(corrId) {
   if (!projectData) return [];
+  if (typeof corrId === 'string' && corrId.startsWith('sa_')) {
+    const segId = parseInt(corrId.slice(3), 10);
+    const seg = projectData.segments.find(s => s.id === segId);
+    return seg ? [seg] : [];
+  }
   return projectData.segments
     .filter(s => s.corridor_id === corrId)
     .sort((a, b) => a.seq - b.seq);
@@ -391,10 +424,16 @@ function joinCorrCoords(corrId) {
 }
 
 function corrDisplayName(corr) {
+  if (corr.isStandalone) {
+    if (!projectData) return 'standalone';
+    const seg = projectData.segments.find(s => s.id === corr._segId);
+    return (seg && (seg.name || seg.route_name_imported || seg.sug_geocode || seg.sug_roads)) || 'standalone';
+  }
   return corr.name || corr.suggested || corr.cor_code || `Corridor ${corr.id}`;
 }
 
 function corrSuggestion(corr) {
+  if (corr.isStandalone) return null;
   if (corr.suggested) return corr.suggested;
   // Fall back to most common child name
   const names = segmentsOfCorridor(corr.id).map(s => s.name).filter(Boolean);
@@ -410,6 +449,15 @@ function corrMatchesFilter(corrId) {
   const isNamed = corridorIsNamed(corrId);
   if (activeFilter === 'named') return isNamed;
   if (activeFilter === 'unnamed') return !isNamed;
+  return true;
+}
+
+function itemMatchesFilter(item) {
+  if (activeFilter === 'all') return true;
+  const segs = segmentsOfItem(item);
+  const allNamed = segs.length > 0 && segs.every(s => s.named);
+  if (activeFilter === 'named') return allNamed;
+  if (activeFilter === 'unnamed') return !allNamed;
   return true;
 }
 
@@ -434,7 +482,7 @@ function renderMap() {
   Object.values(corridorPolylines).forEach(pl => pl.setMap(null));
   corridorPolylines = {};
 
-  projectData.corridors.forEach(corr => {
+  getVisibleCorridors().forEach(corr => {
     const path = joinCorrCoords(corr.id);
     if (!path.length) return;
 
@@ -459,12 +507,11 @@ function renderMap() {
 
     // Hover tooltip
     pl.addListener('mouseover', (e) => {
-      const corObj = getCorrObj(corr.id);
-      const segs = segmentsOfCorridor(corr.id);
-      const unnamedCount = corridorUnnamedCount(corr.id);
-      const label = corrDisplayName(corObj);
+      const segs = segmentsOfItem(corr);
+      const unnamedCount = segs.filter(s => !s.named).length;
+      const label = corrDisplayName(corr);
       const tooltip = document.getElementById('map-tooltip');
-      tooltip.textContent = `${label} · ${segs.length} segs · ${unnamedCount} unnamed`;
+      tooltip.textContent = `${label} · ${segs.length} seg${segs.length !== 1 ? 's' : ''} · ${unnamedCount} unnamed`;
       tooltip.style.display = 'block';
     });
     pl.addListener('mousemove', (e) => {
@@ -629,7 +676,7 @@ function renderCorrList() {
   const container = document.getElementById('corridor-list');
   if (!projectData) { container.innerHTML = ''; return; }
 
-  const corrs = getVisibleCorridors().filter(c => corrMatchesFilter(c.id));
+  const corrs = getVisibleCorridors().filter(c => itemMatchesFilter(c));
 
   if (!corrs.length) {
     container.innerHTML = '<div class="empty-state">No corridors match this filter.</div>';
@@ -640,12 +687,12 @@ function renderCorrList() {
   corrs.forEach(corr => {
     const isOpen = corr.id === openCorrId;
     const isSelected = corr.id === selectedCorrId;
-    const segs = segmentsOfCorridor(corr.id);
-    const unnamedCount = corridorUnnamedCount(corr.id);
-    const named = corridorIsNamed(corr.id);
+    const segs = segmentsOfItem(corr);
+    const unnamedCount = segs.filter(s => !s.named).length;
+    const named = segs.length > 0 && segs.every(s => s.named);
     const dotColor = named ? COLOR_NAMED : COLOR_UNNAMED;
     const label = corrDisplayName(corr);
-    const isStandalone = segs.length <= 1 && !corr.cor_code;
+    const isStandalone = !!corr.isStandalone;
 
     const row = document.createElement('div');
     row.className = `corr-row${isOpen ? ' open' : ''}${isSelected ? ' selected' : ''}`;
@@ -655,7 +702,7 @@ function renderCorrList() {
       <div class="corr-header">
         <div class="corr-dot" style="background:${dotColor}"></div>
         <div class="corr-info">
-          <div class="corr-code">${esc(corr.cor_code || label)}${isStandalone ? ' <em style="font-style:normal;font-weight:400;color:#94a3b8;font-size:11px">standalone</em>' : ''}</div>
+          <div class="corr-code">${esc(isStandalone ? label : (corr.cor_code || label))}${isStandalone ? ' <em style="font-style:normal;font-weight:400;color:#94a3b8;font-size:11px">standalone</em>' : ''}</div>
           <div class="corr-meta">${segs.length} seg${segs.length !== 1 ? 's' : ''} · ${unnamedCount} unnamed</div>
         </div>
         <span class="corr-chevron">▶</span>
@@ -675,21 +722,23 @@ function renderCorrList() {
       }
     });
 
-    // Wire up corridor name editor
-    const nameInput = row.querySelector('.corr-name-input');
-    if (nameInput) {
-      nameInput.addEventListener('change', () => saveCorrName(corr.id, nameInput.value));
-      nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') { nameInput.blur(); } });
-    }
-    const useSugBtn = row.querySelector('.use-sug');
-    if (useSugBtn) {
-      useSugBtn.addEventListener('click', () => {
-        const sug = corrSuggestion(corr);
-        if (sug && nameInput) {
-          nameInput.value = sug;
-          saveCorrName(corr.id, sug);
-        }
-      });
+    // Wire up corridor name editor (real corridors only)
+    if (!isStandalone) {
+      const nameInput = row.querySelector('.corr-name-input');
+      if (nameInput) {
+        nameInput.addEventListener('change', () => saveCorrName(corr.id, nameInput.value));
+        nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') { nameInput.blur(); } });
+      }
+      const useSugBtn = row.querySelector('.use-sug');
+      if (useSugBtn) {
+        useSugBtn.addEventListener('click', () => {
+          const sug = corrSuggestion(corr);
+          if (sug && nameInput) {
+            nameInput.value = sug;
+            saveCorrName(corr.id, sug);
+          }
+        });
+      }
     }
 
     // Wire up segment cards
@@ -702,6 +751,14 @@ function renderCorrList() {
 }
 
 function buildCorrBody(corr, segs) {
+  if (corr.isStandalone) {
+    // Standalone: no corridor name editor, just the single segment card
+    return `
+      <div class="seg-cards">
+        ${segs.map(seg => buildSegCard(seg)).join('')}
+      </div>
+    `;
+  }
   const sug = corrSuggestion(corr);
   const corrNameVal = corr.name || '';
   return `
@@ -809,8 +866,9 @@ async function saveSegName(segId, value) {
     if (inp) {
       inp.classList.toggle('named', !!trimmed);
     }
-    // Recolor map
-    updateCorrPolylineColor(seg.corridor_id);
+    // Recolor map (standalone segments use synthetic key 'sa_<segId>')
+    const recolorId = seg.corridor_id !== null ? seg.corridor_id : ('sa_' + segId);
+    updateCorrPolylineColor(recolorId);
     updateProgressUI();
     showSaveIndicator();
   } catch (err) {
@@ -860,7 +918,7 @@ function jumpToNextUnnamed() {
   ];
 
   for (const corr of orderedCorrs) {
-    const segs = segmentsOfCorridor(corr.id);
+    const segs = segmentsOfItem(corr);
     // If same corridor, look after the focused input
     const unnamedSegs = segs.filter(s => !s.named);
     if (unnamedSegs.length) {
