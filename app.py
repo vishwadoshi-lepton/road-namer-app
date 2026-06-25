@@ -105,4 +105,18 @@ def get_project(pid: int):
     c.close()
     return {"project": dict(p), "corridors": corrs, "segments": segs}
 
+@app.patch("/api/segments/{sid}")
+def patch_segment(sid: int, body: dict = Body(...)):
+    name = (body.get("name") or "").strip()
+    c = conn(); c.execute("UPDATE segments SET name=? WHERE id=?", (name, sid))
+    c.commit(); c.close()
+    return {"ok": True, "named": name != ""}
+
+@app.patch("/api/corridors/{cid}")
+def patch_corridor(cid: int, body: dict = Body(...)):
+    name = (body.get("name") or "").strip()
+    c = conn(); c.execute("UPDATE corridors SET name=? WHERE id=?", (name, cid))
+    c.commit(); c.close()
+    return {"ok": True}
+
 # static frontend (mounted last; added in Task 9)

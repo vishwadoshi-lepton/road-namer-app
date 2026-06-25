@@ -37,3 +37,24 @@ def test_delete_project(tmp_path):
     pid = upload(c).json()["project_id"]
     assert c.delete(f"/api/projects/{pid}").json()["ok"] is True
     assert c.get(f"/api/projects/{pid}").status_code == 404
+
+def test_patch_segment_sets_named(tmp_path):
+    c = make_client(tmp_path)
+    pid = upload(c).json()["project_id"]
+    sid = c.get(f"/api/projects/{pid}").json()["segments"][0]["id"]
+    r = c.patch(f"/api/segments/{sid}", json={"name": "G.S. Road"})
+    assert r.json() == {"ok": True, "named": True}
+    seg = [s for s in c.get(f"/api/projects/{pid}").json()["segments"] if s["id"] == sid][0]
+    assert seg["name"] == "G.S. Road" and seg["named"] is True
+
+def test_patch_segment_blank_is_unnamed(tmp_path):
+    c = make_client(tmp_path)
+    pid = upload(c).json()["project_id"]
+    sid = c.get(f"/api/projects/{pid}").json()["segments"][0]["id"]
+    assert c.patch(f"/api/segments/{sid}", json={"name": "  "}).json()["named"] is False
+
+def test_patch_corridor_name(tmp_path):
+    c = make_client(tmp_path)
+    pid = upload(c).json()["project_id"]
+    cid = c.get(f"/api/projects/{pid}").json()["corridors"][0]["id"]
+    assert c.patch(f"/api/corridors/{cid}", json={"name": "Main Road"}).json()["ok"] is True
