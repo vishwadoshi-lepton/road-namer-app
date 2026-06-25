@@ -145,10 +145,22 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
   margin-bottom: 6px; background: #fff; transition: border-color 0.15s;
 }
 .seg-card:last-child { margin-bottom: 0; }
-.seg-card.focused { background: #eaf2ff; }
-.seg-card.seg-hovered { background: #f3f6fb; border-color: #cbd5e1; }
-.seg-card.seg-focused { background: #f5f9ff; box-shadow: inset 3px 0 0 #4f8cff; }
+.seg-card.focused { border-color: #4f8cff; }
+.seg-card.seg-hovered { border-color: #94a3b8; }
+.seg-card.seg-focused { box-shadow: inset 3px 0 0 #4f8cff; }
 .seg-card.named.seg-focused { box-shadow: inset 3px 0 0 #54c08a; }
+/* input + clear (×) button */
+.input-wrap { position: relative; margin-bottom: 7px; }
+.input-wrap .seg-name-input, .input-wrap .corr-name-input { margin-bottom: 0; padding-right: 30px; }
+.clear-input {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  width: 19px; height: 19px; border: none; border-radius: 50%;
+  background: #e2e8f0; color: #64748b; cursor: pointer; padding: 0;
+  display: none; align-items: center; justify-content: center;
+  font-size: 14px; line-height: 1;
+}
+.input-wrap.has-value .clear-input { display: flex; }
+.clear-input:hover { background: #cbd5e1; color: #1e293b; }
 .seg-ref { font-size: 11px; color: #94a3b8; margin-bottom: 6px; display: flex; align-items: center; }
 .seg-badge { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: #0e1320; color: #fff; font-size: 11px; font-weight: 700; margin-right: 6px; flex-shrink: 0; vertical-align: middle; }
 .seg-name-input {
@@ -615,24 +627,26 @@ function drawChildSegments(corrId) {
 }
 
 // Recompute every child segment's style from current hover/focus state.
-// Normal = status color, weight 7. Emphasized (hovered or selected) = weight 9 +
-// thin white halo + brought to front. When a segment is selected, the corridor's
-// OTHER segments dim to 0.35 so the selected one pops. Layer: hovered > selected > normal.
+// The core line ALWAYS keeps its status color (blue/green) at full opacity — hover/
+// select only ADD a border (the casing halo) and bring the segment to front. No dimming,
+// no colour or weight change to the line. Border: white for hover, dark for selected.
+// Layer: hovered > selected > normal.
 function refreshSegStyles() {
-  const anyFocus = focusedSegId !== null;
   Object.keys(segPolylines).forEach(id => {
     const sid = Number(id);
     const { core, casing } = segPolylines[sid];
     const isFocus = sid === focusedSegId;
     const isHover = sid === hoveredSegId;
     const emph = isFocus || isHover;
-    core.setOptions({
-      strokeWeight: emph ? 9 : 7,
-      strokeOpacity: (!anyFocus || emph) ? 1 : 0.35,
-      zIndex: isHover ? 41 : (isFocus ? 21 : 1)
-    });
+    // Core: never touch colour or opacity — only stacking order.
+    core.setOptions({ zIndex: isHover ? 41 : (isFocus ? 21 : 1) });
     if (emph) {
-      casing.setOptions({ strokeWeight: 14, zIndex: isHover ? 40 : 20 });
+      casing.setOptions({
+        strokeColor: isHover ? '#ffffff' : '#1e293b',
+        strokeWeight: 12,
+        strokeOpacity: 1,
+        zIndex: isHover ? 40 : 20
+      });
       casing.setMap(googleMap);
     } else {
       casing.setMap(null);
@@ -803,8 +817,23 @@ function renderCorrList() {
     if (!isStandalone) {
       const nameInput = row.querySelector('.corr-name-input');
       if (nameInput) {
+        nameInput.addEventListener('input', () => {
+          const wrap = nameInput.closest('.input-wrap');
+          if (wrap) wrap.classList.toggle('has-value', nameInput.value.length > 0);
+        });
         nameInput.addEventListener('change', () => saveCorrName(corr.id, nameInput.value));
         nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') { nameInput.blur(); } });
+        const corrClear = row.querySelector('.corr-name-editor .clear-input');
+        if (corrClear) {
+          corrClear.addEventListener('mousedown', e => e.preventDefault());
+          corrClear.addEventListener('click', () => {
+            nameInput.value = '';
+            const wrap = nameInput.closest('.input-wrap');
+            if (wrap) wrap.classList.remove('has-value');
+            saveCorrName(corr.id, '');
+            nameInput.focus();
+          });
+        }
       }
       const useSugBtn = row.querySelector('.use-sug');
       if (useSugBtn) {
@@ -840,7 +869,10 @@ function buildCorrBody(corr, segs) {
   const corrNameVal = corr.name || '';
   return `
     <div class="corr-name-editor">
-      <input class="corr-name-input" type="text" value="${esc(corrNameVal)}" placeholder="Corridor name…"/>
+      <div class="input-wrap${corrNameVal ? ' has-value' : ''}" style="flex:1">
+        <input class="corr-name-input" type="text" value="${esc(corrNameVal)}" placeholder="Corridor name…"/>
+        <button class="clear-input" title="Clear" tabindex="-1">×</button>
+      </div>
       ${sug ? `<button class="use-sug" title="${esc(sug)}">Use: ${esc(sug.length > 20 ? sug.slice(0,20) + '…' : sug)}</button>` : ''}
     </div>
     <div class="seg-cards">
@@ -858,14 +890,17 @@ function buildSegCard(seg, idx) {
   return `
     <div class="seg-card${named ? ' named' : ''}" id="seg-card-${seg.id}">
       <div class="seg-ref">${badgeHtml}${esc(seg.route_name_imported || '')}</div>
-      <input
-        class="seg-name-input${named ? ' named' : ''}"
-        id="seg-input-${seg.id}"
-        type="text"
-        value="${esc(seg.name || '')}"
-        placeholder="Enter road name…"
-        data-seg-id="${seg.id}"
-      />
+      <div class="input-wrap${seg.name ? ' has-value' : ''}">
+        <input
+          class="seg-name-input${named ? ' named' : ''}"
+          id="seg-input-${seg.id}"
+          type="text"
+          value="${esc(seg.name || '')}"
+          placeholder="Enter road name…"
+          data-seg-id="${seg.id}"
+        />
+        <button class="clear-input" title="Clear" tabindex="-1">×</button>
+      </div>
       <div class="seg-chips">${chips}</div>
     </div>
   `;
@@ -897,6 +932,8 @@ function wireSegCard(rowEl, seg, corrId) {
   if (input) {
     // Debounced save on input
     input.addEventListener('input', () => {
+      const wrap = input.closest('.input-wrap');
+      if (wrap) wrap.classList.toggle('has-value', input.value.length > 0);
       clearTimeout(saveTimers[seg.id]);
       saveTimers[seg.id] = setTimeout(() => saveSegName(seg.id, input.value), 800);
     });
@@ -912,6 +949,20 @@ function wireSegCard(rowEl, seg, corrId) {
         clearTimeout(saveTimers[seg.id]);
         saveSegName(seg.id, input.value).then(() => jumpToNextUnnamed());
       }
+    });
+  }
+
+  // Clear (×) button
+  const clearBtn = card.querySelector('.clear-input');
+  if (clearBtn && input) {
+    clearBtn.addEventListener('mousedown', e => e.preventDefault()); // don't blur the input
+    clearBtn.addEventListener('click', () => {
+      input.value = '';
+      const wrap = input.closest('.input-wrap');
+      if (wrap) wrap.classList.remove('has-value');
+      clearTimeout(saveTimers[seg.id]);
+      saveSegName(seg.id, '');
+      input.focus();
     });
   }
 
