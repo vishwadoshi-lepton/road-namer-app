@@ -164,6 +164,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 .input-wrap input:not(:placeholder-shown) + .clear-input { display: flex; }
 .clear-input:hover { background: #cbd5e1; color: #1e293b; }
 .seg-ref { font-size: 11px; color: #94a3b8; margin-bottom: 6px; display: flex; align-items: center; }
+.seg-len { margin-left: auto; padding-left: 8px; color: #94a3b8; font-variant-numeric: tabular-nums; }
 .seg-badge { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: #0e1320; color: #fff; font-size: 11px; font-weight: 700; margin-right: 6px; flex-shrink: 0; vertical-align: middle; }
 .seg-name-input {
   width: 100%; border: 1px solid #e2e8f0; border-radius: 6px; padding: 7px 9px;
@@ -238,9 +239,10 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
       <!-- Home view -->
       <div id="home">
         <h2>Road Namer</h2>
-        <p class="subtitle">Import a GeoJSON file to start naming road segments.</p>
+        <p class="subtitle">Select a project to start naming road segments.</p>
 
-        <div id="import-area" onclick="document.getElementById('file-input').click()">
+        <!-- Import is hidden from end users; projects are provisioned by an admin (POST /api/projects). -->
+        <div id="import-area" style="display:none" onclick="document.getElementById('file-input').click()">
           <label id="import-btn-label">+ Import GeoJSON</label>
           <p>Click to choose a .geojson file, or drag and drop</p>
           <div id="import-status"></div>
@@ -284,6 +286,8 @@ let activeFilter = 'all';        // 'all' | 'unnamed' | 'named'
 let openCorrId = null;           // accordion: currently open corridor id (null = none)
 let selectedCorrId = null;       // map-selected corridor/standalone id
 let childPolylines = [];         // child segment polylines when a corridor is selected
+let dirMarkers = [];             // direction markers (origin circle + per-segment arrows), zoom-gated
+const DIR_ZOOM = 15;             // min zoom at which direction markers are shown
 let corridorPolylines = {};      // corrId -> google.maps.Polyline (top-level)
 let saveTimers = {};             // segId -> debounce timer
 let mapsLoaded = false;
@@ -306,6 +310,37 @@ function midpointGM(coords) {
   // Return the middle point of a coords array (lng,lat order) as {lat,lng}
   const mid = Math.floor(coords.length / 2);
   return { lat: coords[mid][1], lng: coords[mid][0] };
+}
+
+function headingDeg(a, b) {
+  // bearing a→b ({lat,lng}) in degrees, 0=N clockwise
+  const toRad = d => d * Math.PI / 180, toDeg = r => r * 180 / Math.PI;
+  const dLng = toRad(b.lng - a.lng);
+  const y = Math.sin(dLng) * Math.cos(toRad(b.lat));
+  const x = Math.cos(toRad(a.lat)) * Math.sin(toRad(b.lat)) -
+            Math.sin(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.cos(dLng);
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+}
+
+function segLengthM(coords) {
+  // total length in metres of a [[lng,lat],...] line (haversine)
+  const R = 6371000, toRad = d => d * Math.PI / 180;
+  let m = 0;
+  for (let i = 1; i < coords.length; i++) {
+    const [lng1, lat1] = coords[i - 1], [lng2, lat2] = coords[i];
+    const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+    m += 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+  }
+  return m;
+}
+
+function itemLengthM(item) {
+  return segmentsOfItem(item).reduce((s, seg) => s + segLengthM(seg.coords), 0);
+}
+
+function fmtLen(m) {
+  return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(2)} km`;
 }
 
 function showSaveIndicator() {
@@ -588,21 +623,29 @@ function drawChildSegments(corrId) {
 
     childPolylines.push(core, casing);
 
-    // Endpoint nodes (small, pixel-sized via Marker symbol — Circle.radius is in metres and vanishes at city zoom)
-    if (path.length) {
-      const nodeIcon = {
-        path: google.maps.SymbolPath.CIRCLE, scale: 3,
-        fillColor: segColor, fillOpacity: 1,
-        strokeColor: '#fff', strokeWeight: 1.5
-      };
-      const startNode = new google.maps.Marker({
-        position: path[0], map: googleMap, icon: nodeIcon, zIndex: 5, clickable: false
-      });
-      const endNode = new google.maps.Marker({
-        position: path[path.length - 1], map: googleMap, icon: nodeIcon, zIndex: 5, clickable: false
-      });
-      segPolylines[seg.id].nodes = [startNode, endNode];
-      childPolylines.push(startNode, endNode);
+    // Direction markers: a circle at the corridor ORIGIN (first segment's start) and an
+    // arrow at every segment END pointing in the travel direction. Created off-map and
+    // shown only when zoomed in (see updateDirMarkers) — i.e. on close inspection/selection.
+    if (path.length >= 2) {
+      const markers = [];
+      if (idx === 0) {
+        markers.push(new google.maps.Marker({
+          position: path[0], icon: {
+            path: google.maps.SymbolPath.CIRCLE, scale: 4,
+            fillColor: segColor, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 1.5
+          }, zIndex: 6, clickable: false
+        }));
+      }
+      const a = path[path.length - 2], b = path[path.length - 1];
+      markers.push(new google.maps.Marker({
+        position: b, icon: {
+          path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW, scale: 3.5,
+          rotation: headingDeg(a, b), fillColor: segColor, fillOpacity: 1,
+          strokeColor: '#fff', strokeWeight: 1
+        }, zIndex: 6, clickable: false
+      }));
+      segPolylines[seg.id].nodes = markers;
+      markers.forEach(m => { childPolylines.push(m); dirMarkers.push(m); });
     }
 
     // Numbered badge marker at midpoint
@@ -626,6 +669,7 @@ function drawChildSegments(corrId) {
   });
 
   refreshSegStyles();
+  updateDirMarkers();
 }
 
 // Recompute every child segment's style from current hover/focus state.
@@ -674,9 +718,16 @@ function setSegFocus(segId) {
 function clearChildPolylines() {
   childPolylines.forEach(p => p.setMap(null));
   childPolylines = [];
+  dirMarkers = [];
   segPolylines = {};
   hoveredSegId = null;
   focusedSegId = null;
+}
+
+// Direction markers (origin circle + arrows) only show when zoomed in past DIR_ZOOM.
+function updateDirMarkers() {
+  const show = !!googleMap && googleMap.getZoom() >= DIR_ZOOM;
+  dirMarkers.forEach(m => m.setMap(show ? googleMap : null));
 }
 
 function fitMapToCorridors() {
@@ -707,6 +758,7 @@ function initMapClickDeselect() {
   googleMap.addListener('click', () => {
     deselectCorridor();
   });
+  googleMap.addListener('zoom_changed', updateDirMarkers);
 }
 
 // ── Tooltip mousemove on document ──────────────────────────────────
@@ -794,7 +846,7 @@ function renderCorrList() {
         <div class="corr-dot" style="background:${dotColor}"></div>
         <div class="corr-info">
           <div class="corr-code">${esc(isStandalone ? label : (corr.cor_code || label))}${isStandalone ? ' <em style="font-style:normal;font-weight:400;color:#94a3b8;font-size:11px">standalone</em>' : ''}</div>
-          <div class="corr-meta">${segs.length} seg${segs.length !== 1 ? 's' : ''} · ${unnamedCount} unnamed</div>
+          <div class="corr-meta">${segs.length} seg${segs.length !== 1 ? 's' : ''} · ${unnamedCount} unnamed · ${fmtLen(itemLengthM(corr))}</div>
         </div>
         <span class="corr-chevron">▶</span>
       </div>
@@ -883,7 +935,7 @@ function buildSegCard(seg, idx) {
   const badgeHtml = badgeNum ? `<span class="seg-badge">${badgeNum}</span>` : '';
   return `
     <div class="seg-card${named ? ' named' : ''}" id="seg-card-${seg.id}">
-      <div class="seg-ref">${badgeHtml}${esc(seg.route_name_imported || '')}</div>
+      <div class="seg-ref">${badgeHtml}${esc(seg.route_name_imported || '')}<span class="seg-len">${fmtLen(segLengthM(seg.coords))}</span></div>
       <div class="input-wrap">
         <input
           class="seg-name-input${named ? ' named' : ''}"
@@ -1064,7 +1116,7 @@ function recolorCorr(corrId) {
     const meta = row.querySelector('.corr-meta');
     if (meta) {
       const unnamed = segs.filter(s => !s.named).length;
-      meta.textContent = `${segs.length} seg${segs.length !== 1 ? 's' : ''} · ${unnamed} unnamed`;
+      meta.textContent = `${segs.length} seg${segs.length !== 1 ? 's' : ''} · ${unnamed} unnamed · ${fmtLen(itemLengthM(item))}`;
     }
   }
 }
@@ -1113,7 +1165,7 @@ async function loadProjects() {
     const projects = await apiFetch('/api/projects');
     loading.style.display = 'none';
     if (!projects.length) {
-      list.innerHTML = '<div class="empty-state">No projects yet. Import a GeoJSON file to get started.</div>';
+      list.innerHTML = '<div class="empty-state">No projects available yet.</div>';
       return;
     }
     list.innerHTML = '';
