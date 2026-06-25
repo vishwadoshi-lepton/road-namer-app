@@ -58,3 +58,8 @@ def test_patch_corridor_name(tmp_path):
     pid = upload(c).json()["project_id"]
     cid = c.get(f"/api/projects/{pid}").json()["corridors"][0]["id"]
     assert c.patch(f"/api/corridors/{cid}", json={"name": "Main Road"}).json()["ok"] is True
+
+def test_config_returns_maps_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("GOOGLE_MAPS_JS_KEY", "MAPS123")
+    c = make_client(tmp_path)
+    assert c.get("/api/config").json()["maps_key"] == "MAPS123"

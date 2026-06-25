@@ -2,6 +2,7 @@ import json, os, math, io
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, UploadFile, File, Body
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 import db, importer, export
 
 load_dotenv()  # read keys from root .env if present
@@ -134,4 +135,13 @@ def export_project(pid: int):
     return StreamingResponse(buf, media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="project_{pid}_named.json"'})
 
-# static frontend (mounted last; added in Task 9)
+@app.get("/api/config")
+def config():
+    return {"maps_key": os.environ.get("GOOGLE_MAPS_JS_KEY", "")}
+
+app.mount("/", StaticFiles(directory=os.path.join(HERE, "static"), html=True), name="static")
+
+if __name__ == "__main__":
+    import uvicorn
+    print("Road Namer -> http://localhost:8000")
+    uvicorn.run(app, host="0.0.0.0", port=8000)
