@@ -1,0 +1,125 @@
+<h2>Proposed layout &amp; flow — does this skeleton match your vision?</h2>
+<p class="subtitle">Map left, naming panel right. Select a corridor → it and its child segments highlight and become editable. Child segments are <b>not</b> clickable until their corridor is selected. Redline anything.</p>
+
+<style>
+  .rn-app{border:1px solid #3a3f4b;border-radius:10px;overflow:hidden;background:#0f1218;font-size:13px}
+  .rn-head{display:flex;align-items:center;gap:14px;padding:10px 14px;background:#161b24;border-bottom:1px solid #2a2f3a}
+  .rn-head .logo{font-weight:700;color:#e8ebf0}
+  .rn-prog{flex:1;display:flex;align-items:center;gap:8px;color:#9aa3b2;font-size:12px}
+  .rn-bar{flex:1;height:7px;border-radius:4px;background:#262c38;overflow:hidden;max-width:260px}
+  .rn-bar > i{display:block;height:100%;width:40%;background:#4f8cff}
+  .rn-btn{background:#2563eb;color:#fff;border-radius:6px;padding:6px 12px;font-weight:600}
+  .rn-body{display:grid;grid-template-columns:1.5fr 1fr;min-height:430px}
+  .rn-map{position:relative;background:#1a2230;border-right:1px solid #2a2f3a}
+  .rn-maplabel{position:absolute;top:8px;left:10px;background:#0009;color:#cfd6e4;padding:3px 8px;border-radius:5px;font-size:11px}
+  .rn-sv{position:absolute;bottom:12px;right:12px;width:34px;height:34px;border-radius:50%;background:#fbbf24;display:flex;align-items:center;justify-content:center;font-size:16px;border:2px solid #fff}
+  .rn-legend{position:absolute;bottom:12px;left:10px;background:#0009;padding:6px 9px;border-radius:6px;font-size:11px;color:#cfd6e4;line-height:1.7}
+  .rn-legend i{display:inline-block;width:14px;height:3px;vertical-align:middle;margin-right:5px;border-radius:2px}
+  .rn-panel{background:#10141c;display:flex;flex-direction:column}
+  .rn-filter{display:flex;gap:6px;padding:9px 11px;border-bottom:1px solid #232936}
+  .rn-chip{padding:3px 9px;border-radius:20px;font-size:11px;background:#222a38;color:#9aa3b2}
+  .rn-chip.on{background:#2563eb;color:#fff}
+  .rn-list{padding:6px;overflow:auto}
+  .rn-row{border:1px solid #232936;border-radius:8px;margin-bottom:6px;background:#141923}
+  .rn-corhead{display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer}
+  .rn-corhead .tw{color:#7b8496}
+  .rn-corhead .nm{font-weight:600;color:#e8ebf0;flex:1}
+  .rn-corhead .meta{font-size:11px;color:#8a93a6}
+  .rn-sel{outline:2px solid #4f8cff;border-color:#4f8cff}
+  .rn-segs{padding:4px 8px 9px 8px;border-top:1px dashed #2a3140}
+  .rn-seg{padding:7px 4px;border-bottom:1px solid #1c2230}
+  .rn-seg:last-child{border-bottom:0}
+  .rn-segtop{display:flex;align-items:center;gap:7px;margin-bottom:5px}
+  .rn-dot{width:8px;height:8px;border-radius:50%;background:#4f8cff;flex:none}
+  .rn-segname{flex:1;background:#0e1320;border:1px solid #2b3344;border-radius:5px;padding:4px 7px;color:#dfe5f0;font-size:12px}
+  .rn-sugs{display:flex;gap:5px;flex-wrap:wrap;margin-left:15px}
+  .rn-sug{font-size:11px;padding:3px 8px;border-radius:5px;background:#15233a;color:#8fb6ff;border:1px solid #29405f}
+  .rn-sug b{color:#5e6b80;font-weight:600;font-size:10px}
+  .rn-div{margin-left:15px;margin-top:5px;display:flex;gap:4px;align-items:center}
+  .rn-div span{font-size:10px;color:#6b7488}
+  .rn-divbtn{font-size:10px;padding:2px 7px;border-radius:4px;background:#222a38;color:#9aa3b2}
+  .rn-divbtn.on{background:#3b3050;color:#d9b8ff;border:1px solid #6d49a8}
+  .rn-callouts{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:14px}
+  .rn-co{background:#141a24;border:1px solid #263042;border-radius:8px;padding:9px 11px;font-size:12px;color:#bcc6d6}
+  .rn-co b{color:#7fa9ff}
+</style>
+
+<div class="rn-app">
+  <div class="rn-head">
+    <span class="logo">🛣 Road Namer — Shillong&nbsp;P74</span>
+    <span class="rn-prog">Named <b style="color:#cfd6e4">412 / 1,031</b> <span class="rn-bar"><i></i></span></span>
+    <span class="rn-btn">Export / Sync</span>
+  </div>
+  <div class="rn-body">
+    <!-- MAP -->
+    <div class="rn-map">
+      <span class="rn-maplabel">Google Maps · POIs + Street View</span>
+      <svg viewBox="0 0 400 400" width="100%" height="100%" style="display:block">
+        <!-- faint unselected corridors -->
+        <polyline points="40,330 90,300 150,310 210,280" fill="none" stroke="#3a4866" stroke-width="3"/>
+        <polyline points="300,60 320,120 290,180 330,240" fill="none" stroke="#3a4866" stroke-width="3"/>
+        <polyline points="60,90 120,70 180,95 220,60" fill="none" stroke="#3a4866" stroke-width="3"/>
+        <!-- standalone (different colour) -->
+        <polyline points="250,330 300,350 350,320" fill="none" stroke="#5a4a2e" stroke-width="3" stroke-dasharray="2 4"/>
+        <!-- SELECTED corridor: bright, with its segments as alternating shades + endpoint nodes -->
+        <polyline points="70,210 140,190 210,205 270,170" fill="none" stroke="#4f8cff" stroke-width="5"/>
+        <circle cx="70" cy="210" r="5" fill="#4f8cff"/>
+        <circle cx="140" cy="190" r="5" fill="#9ec1ff"/>
+        <circle cx="210" cy="205" r="5" fill="#9ec1ff"/>
+        <circle cx="270" cy="170" r="5" fill="#4f8cff"/>
+        <!-- POI pins -->
+        <text x="132" y="183" font-size="13">📍</text>
+        <text x="262" y="163" font-size="13">📍</text>
+      </svg>
+      <div class="rn-legend"><i style="background:#4f8cff"></i>selected corridor<br><i style="background:#3a4866"></i>other corridors<br><i style="background:#5a4a2e"></i>standalone</div>
+      <div class="rn-sv">🧍</div>
+    </div>
+    <!-- PANEL -->
+    <div class="rn-panel">
+      <div class="rn-filter">
+        <span class="rn-chip on">All 617</span>
+        <span class="rn-chip">Unnamed 619</span>
+        <span class="rn-chip">Named 412</span>
+      </div>
+      <div class="rn-list">
+        <!-- SELECTED + EXPANDED corridor -->
+        <div class="rn-row rn-sel">
+          <div class="rn-corhead">
+            <span class="tw">▾</span>
+            <span class="nm">G.S. Road <span style="font-weight:400;color:#6b7488;font-size:11px">(was “Route 385”)</span></span>
+            <span class="meta">3 segs</span>
+          </div>
+          <div class="rn-segs">
+            <div class="rn-seg">
+              <div class="rn-segtop"><span class="rn-dot"></span><input class="rn-segname" value="Police Bazar stretch"></div>
+              <div class="rn-sugs"><span class="rn-sug"><b>GEOCODE</b> G.S. Road</span><span class="rn-sug"><b>ROADS</b> Jail Road</span></div>
+              <div class="rn-div"><span>carriageway</span><span class="rn-divbtn">Unset</span><span class="rn-divbtn on">Divided</span><span class="rn-divbtn">Undivided</span></div>
+            </div>
+            <div class="rn-seg">
+              <div class="rn-segtop"><span class="rn-dot"></span><input class="rn-segname" placeholder="name this segment…" style="color:#6b7488"></div>
+              <div class="rn-sugs"><span class="rn-sug"><b>GEO+ROADS</b> G.S. Road</span></div>
+              <div class="rn-div"><span>carriageway</span><span class="rn-divbtn on">Unset</span><span class="rn-divbtn">Divided</span><span class="rn-divbtn">Undivided</span></div>
+            </div>
+            <div class="rn-seg">
+              <div class="rn-segtop"><span class="rn-dot"></span><input class="rn-segname" placeholder="name this segment…" style="color:#6b7488"></div>
+              <div class="rn-sugs"><span class="rn-sug"><b>GEOCODE</b> G.S. Road</span><span class="rn-sug"><b>ROADS</b> Thana Road</span></div>
+            </div>
+          </div>
+        </div>
+        <!-- collapsed corridors -->
+        <div class="rn-row"><div class="rn-corhead"><span class="tw">▸</span><span class="nm">Route 12</span><span class="meta">5 segs · 2 unnamed</span></div></div>
+        <div class="rn-row"><div class="rn-corhead"><span class="tw">▸</span><span class="nm">Mawlai Main</span><span class="meta">4 segs ✓</span></div></div>
+        <!-- standalone -->
+        <div class="rn-row"><div class="rn-corhead"><span class="tw" style="color:#5a4a2e">•</span><span class="nm">Route 273 <span style="font-weight:400;color:#6b7488;font-size:11px">standalone</span></span><span class="meta">1</span></div></div>
+        <div class="rn-row"><div class="rn-corhead"><span class="tw" style="color:#5a4a2e">•</span><span class="nm">Route 266 <span style="font-weight:400;color:#6b7488;font-size:11px">standalone</span></span><span class="meta">1</span></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="rn-callouts">
+  <div class="rn-co"><b>1 · Select</b> — click a corridor on the map <i>or</i> its row in the panel. Only corridors &amp; standalone are clickable; child segments aren’t, until selected.</div>
+  <div class="rn-co"><b>2 · Highlight</b> — the chosen corridor + its segments light up on the map; the panel row expands to its segment list.</div>
+  <div class="rn-co"><b>3 · Name</b> — per segment: tap a suggestion chip (geocode / roads, merged if equal) or type your own. Set carriageway. Autosaves.</div>
+  <div class="rn-co"><b>4 · Corridor name</b> — auto-suggested from its child names; one tap to apply. Progress + Export in the header.</div>
+</div>

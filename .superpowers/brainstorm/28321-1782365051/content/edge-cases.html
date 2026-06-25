@@ -1,0 +1,61 @@
+<h2>Edge cases — reversed twins &amp; broken-corridor orphans</h2>
+<p class="subtitle">Both grounded in the real Shillong data. The twins need a decision; the orphans just need a confirm.</p>
+
+<style>
+  .ec-box{background:#10141c;border:1px solid #2a3142;border-radius:10px;padding:14px 15px;margin-bottom:16px}
+  .ec-box h3{margin:0 0 4px}
+  .ec-nums{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 4px}
+  .ec-n{background:#161b24;border:1px solid #263042;border-radius:7px;padding:6px 10px;font-size:12px;color:#bcc6d6}
+  .ec-n b{color:#7fa9ff;font-size:14px}
+  .ec-vis{display:flex;align-items:center;gap:14px;justify-content:center;margin:12px 0;flex-wrap:wrap}
+  .ec-pill{background:#141a24;border:1px solid #263042;border-radius:8px;padding:8px 12px;font-size:12px;color:#cfd6e4}
+  .ec-arrow{color:#54c08a;font-size:20px}
+  .ec-merged{background:#15211a;border:1px solid #2c4a36;color:#a9d8bd;border-radius:8px;padding:8px 12px;font-size:12px}
+  .ec-merged b{color:#54c08a}
+  .ec-good{color:#54c08a}
+</style>
+
+<div class="ec-box">
+  <h3>① Reversed-direction twins</h3>
+  <p class="subtitle" style="margin:0">A physical road often appears as two routes — <code>Route 273</code> and <code>Route 273 (Reversed)</code> — same road, opposite directions, two different uuids.</p>
+  <div class="ec-nums">
+    <span class="ec-n"><b>88</b> reversed leaves</span>
+    <span class="ec-n"><b>69</b> with a clean forward twin</span>
+    <span class="ec-n"><b>68/69</b> geometry-confirmed</span>
+    <span class="ec-n"><b>19</b> lonely (named normally)</span>
+  </div>
+  <div class="ec-vis">
+    <span class="ec-pill">→ Route 273</span>
+    <span class="ec-pill">← Route 273 (Reversed)</span>
+    <span class="ec-arrow">⇒</span>
+    <span class="ec-merged"><b>↔ Route 273</b> · one row, name once → both directions get it · <span style="color:#6b7488">2 uuids preserved for sync</span></span>
+  </div>
+</div>
+
+<h3 style="text-align:center;margin-bottom:4px">How should twins behave?</h3>
+<div class="options">
+  <div class="option" data-choice="autolink" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content"><h3>Auto-link confirmed twins — name once, applies to both <span class="ec-good" style="font-size:12px">(recommended)</span></h3>
+      <p>Only when base-name matches <em>and</em> geometry confirms the reversal (so no false pairing). Shows as a single "↔ both directions" row; the name flows to both uuids on sync. An "unlink" control is there for the rare case the two directions genuinely differ. The 19 lonely reversed routes appear as normal items.</p></div>
+  </div>
+  <div class="option" data-choice="independent" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content"><h3>Treat every direction independently</h3>
+      <p>No linking — the inspector names <code>Route 273</code> and <code>Route 273 (Reversed)</code> separately. Simpler logic, but ~69 redundant entries and a real risk the same road gets two different names by accident.</p></div>
+  </div>
+</div>
+
+<div class="ec-box" style="margin-top:18px">
+  <h3>② Broken-corridor orphans <span class="ec-good" style="font-size:13px">— confirming your rule, no decision needed</span></h3>
+  <p class="subtitle" style="margin:0">When a parent has even one unsynced child, it isn't shown as a corridor; its surviving synced children become <b>standalone</b> — same look as any standalone (no special color, per your call).</p>
+  <div class="ec-nums">
+    <span class="ec-n"><b>154</b> intact corridors</span>
+    <span class="ec-n"><b>272</b> orphans → standalone</span>
+    <span class="ec-n"><b>191</b> genuine standalone</span>
+    <span class="ec-n"><b>463</b> standalone total</span>
+  </div>
+  <p class="subtitle" style="margin:8px 0 0">Each orphan keeps its imported name (e.g. <code>Route 385 - Segment 2</code>) pre-filled, so its origin is still legible — but it's named as its own road. Nothing references the broken parent.</p>
+</div>
+
+<p class="subtitle">Pick A or B for twins (click or terminal). If the orphan handling looks right, just say so. After this I think we've turned every stone — next I'll write up the full design spec for your review.</p>

@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Road Corridor Namer</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root{--bg:#0f1115;--panel:#171a21;--panel2:#1e222b;--line:#2a2f3a;--txt:#e7ebf2;--muted:#9aa4b2;
+        --accent:#3b82f6;--ok:#22c55e;--warn:#f59e0b;--rev:#a855f7;--danger:#ef4444;}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--txt)}
+  #app{display:flex;flex-direction:column;height:100vh}
+  topbar,.topbar{display:flex;gap:10px;align-items:center;padding:9px 14px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .topbar h1{font-size:14px;margin:0;font-weight:600;margin-right:6px}
+  select,input[type=text],input[type=password]{background:#0e1117;border:1px solid var(--line);color:var(--txt);padding:7px 9px;border-radius:7px;font-size:13px;outline:none}
+  input:focus,select:focus{border-color:var(--accent)}
+  button{font-family:inherit;font-size:13px;border:1px solid var(--line);border-radius:7px;padding:7px 11px;cursor:pointer;color:#fff;background:var(--panel2)}
+  button:hover{filter:brightness(1.15)} button.primary{background:var(--accent);border-color:var(--accent)} button:disabled{opacity:.45;cursor:not-allowed}
+  .grow{flex:1}
+  #main{flex:1;display:flex;min-height:0}
+  #map{flex:1;background:#0b0d11}
+  #side{width:400px;min-width:400px;border-left:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column}
+  .modebar{display:flex;border-bottom:1px solid var(--line)}
+  .modebar button{flex:1;border:none;border-radius:0;border-bottom:2px solid transparent;background:transparent;color:var(--muted);padding:11px}
+  .modebar button.on{color:var(--txt);border-bottom-color:var(--accent)}
+  .body{flex:1;overflow:auto;padding:14px}
+  .card{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:13px;margin-bottom:12px}
+  label{display:block;font-size:12px;color:var(--muted);margin:10px 0 5px}
+  .sug{font-size:12px;color:#9bbcff;background:#13233f;border:1px solid #294a6b;border-radius:7px;padding:7px 9px;margin-bottom:6px;cursor:pointer}
+  .sug.empty{color:var(--warn);background:#2a2310;cursor:default}
+  .row{display:flex;gap:8px;align-items:center}
+  .chip{flex:1;text-align:center;padding:8px;border:1px solid var(--line);border-radius:7px;font-size:12px;cursor:pointer;background:#0e1117}
+  .chip.on{border-color:var(--accent);background:#13233f;color:#bcd4ff}
+  .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;background:#23304a;color:#9bbcff;margin-right:6px}
+  .tag.rev{background:#33214a;color:#d6b4ff}
+  .small{font-size:11px;color:var(--muted)}
+  .hint{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5}
+  kbd{background:#0e1117;border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:10px}
+  .corr{border:1px solid var(--line);border-radius:9px;margin-bottom:9px;overflow:hidden}
+  .corr.active{border-color:var(--accent)}
+  .corr h4{margin:0;padding:9px 11px;font-size:13px;background:#0e1117;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .corr h4 .cn{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .corr h4 .sw{width:11px;height:11px;border-radius:3px;flex:none}
+  .seglist{padding:4px}
+  .seg{display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:6px;font-size:12px;cursor:grab;border:1px solid transparent}
+  .seg:hover{background:#0e1117}
+  .seg.sel{background:#13233f;border-color:var(--accent)}
+  .seg .si{color:#6b7280;width:30px;flex:none}
+  .seg .sn{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .seg.dragover{border-color:var(--accent)}
+  .cbtns{display:flex;gap:6px;padding:6px 8px;flex-wrap:wrap}
+  .cbtns button{font-size:11px;padding:5px 8px}
+  .pill{font-size:11px;color:var(--muted)}
+  #prog{height:6px;background:var(--panel2);border-radius:6px;overflow:hidden;flex-basis:160px}
+  #prog>div{height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--ok));transition:width .2s}
+  .legendbox{position:absolute;left:12px;bottom:12px;z-index:600;background:rgba(20,24,31,.92);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:11px;color:var(--muted);max-width:260px}
+  .arrow-icon svg{filter:drop-shadow(0 0 2px #000)}
+  #empty{margin:auto;text-align:center;color:var(--muted);max-width:420px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <h1>Road Corridor Namer</h1>
+    <select id="proj"></select>
+    <button id="newbtn">+ Import GeoJSON</button>
+    <input id="file" type="file" accept=".geojson,.json" style="display:none"/>
+    <span class="grow"></span>
+    <input id="gkey" type="password" placeholder="Google API key" style="width:150px"/>
+    <label class="small" style="margin:0;display:flex;align-items:center;gap:5px"><input type="checkbox" id="offline"/> offline (cache only)</label>
+    <select id="mode-sel"><option value="geocode">geocode (cheap)</option><option value="roads">roads (accurate)</option></select>
+    <button id="enrich" class="primary">✨ Auto-name</button>
+    <div id="prog"><div></div></div>
+    <span id="progtxt" class="small"></span>
+    <button id="export">⬇ Export</button>
+  </div>
+  <div id="main">
+    <div id="map"><div class="legendbox" id="legend"></div></div>
+    <div id="side">
+      <div class="modebar">
+        <button id="m-names" class="on">✍ Names</button>
+        <button id="m-corr">🛣 Corridors</button>
+      </div>
+      <div class="body" id="sidebody">
+        <div id="empty">Pick a project above, or <b>Import GeoJSON</b> to start.<br><br>
+          Auto-name fills a first-layer suggestion (segment = POI→POI, corridor = road: POI→POI) you can accept or override. Edit corridors by clicking segments on the map or dragging them between lists.</div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+const API="";
+let DATA=null, PID=null, mode="names", curSeg=null, activeCorr=null, map, layer, arrowLayer, lastFit=null;
+const C_CUR="#3b82f6", C_MEMBER="#6b7280", C_CTX="#3a414d", C_REV="#a855f7";
+
+/* ---------- geometry ---------- */
+function bearing(a,b){const y=Math.sin((b[0]-a[0])*Math.PI/180)*Math.cos(b[1]*Math.PI/180);
+  const x=Math.cos(a[1]*Math.PI/180)*Math.sin(b[1]*Math.PI/180)-Math.sin(a[1]*Math.PI/180)*Math.cos(b[1]*Math.PI/180)*Math.cos((b[0]-a[0])*Math.PI/180);
+  return (Math.atan2(y,x)*180/Math.PI+360)%360;}
+function ll(c){return c.map(p=>[p[1],p[0]]);}
+function oriented(s){return s.reversed?s.coords.slice().reverse():s.coords.slice();}
+
+/* ---------- API ---------- */
+async function api(path,opts){
+  const r=await fetch(API+path,opts);
+  if(!r.ok){ let m=await r.text(); try{m=JSON.parse(m).detail||m;}catch(e){} throw new Error(`${r.status}: ${m}`); }
+  return (r.headers.get("content-type")||"").includes("json")?r.json():r;
+}
+async function jpost(path,body){return api(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})});}
+async function jpatch(path,body){return api(path,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})});}
+
+/* ---------- projects ---------- */
+async function loadProjects(sel){
+  let ps;
+  try{ ps=await api("/api/projects"); }
+  catch(e){ $("#empty").innerHTML="<b>Can't reach the server.</b><br>Run <code>python app.py</code> and open <b>http://localhost:8000</b> (don't open index.html directly)."; return; }
+  $("#proj").innerHTML='<option value="">— select project —</option>'+ps.map(p=>`<option value="${p.id}">#${p.id} ${p.name} (${p.seg_count} segs)</option>`).join("");
+  if(sel){$("#proj").value=sel; openProject(sel);}
+}
+async function openProject(pid){
+  PID=pid; DATA=await api("/api/projects/"+pid);
+  activeCorr=DATA.corridors[0]?DATA.corridors[0].id:null;
+  curSeg=DATA.segments[0]?DATA.segments[0].id:null;
+  lastFit=null; renderMap(); renderSide();
+  if(DATA.progress&&DATA.progress.running) pollProgress();
+}
+
+/* ---------- map ---------- */
+function initMap(){map=L.map("map").setView([22.99,72.54],12);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(map);
+  layer=L.layerGroup().addTo(map); arrowLayer=L.layerGroup().addTo(map);}
+function corrOf(id){return DATA.corridors.find(c=>c.id===id);}
+function segsOfCorr(cid){return DATA.segments.filter(s=>s.corridor_id===cid).sort((a,b)=>a.seq-b.seq);}
+function curSegObj(){ return DATA.segments.find(s=>s.id===curSeg); }
+function focusCorr(){ if(mode==="names"){ const s=curSegObj(); return s?s.corridor_id:activeCorr; } return activeCorr; }
+function fitTo(cid,pad){
+  if(lastFit===cid+"|"+mode) return;        // only refit when the focused corridor changes (no jitter)
+  const pts=[]; DATA.segments.filter(s=>s.corridor_id===cid).forEach(s=>s.coords.forEach(c=>pts.push([c[1],c[0]])));
+  if(pts.length){ map.fitBounds(L.latLngBounds(pts).pad(pad)); lastFit=cid+"|"+mode; }
+}
+function addArrows(s){
+  const co=oriented(s);
+  for(let i=1;i<co.length;i+=Math.max(1,Math.floor(co.length/3))){
+    const b=bearing(co[i-1],co[i]);
+    arrowLayer.addLayer(L.marker([co[i][1],co[i][0]],{interactive:false,icon:L.divIcon({className:"arrow-icon",iconSize:[16,16],iconAnchor:[8,8],
+      html:`<svg width="16" height="16" viewBox="0 0 16 16" style="transform:rotate(${b}deg)"><path d="M8 1 L13 14 L8 10 L3 14 Z" fill="#fff"/></svg>`})}));
+  }
+}
+function renderMap(){
+  if(!DATA) return;
+  layer.clearLayers(); arrowLayer.clearLayers();
+  const fc=focusCorr();
+  DATA.segments.forEach(s=>{
+    const inFocus = s.corridor_id===fc;
+    if(mode==="names"){
+      if(!inFocus) return;                                   // NAMES: show only the current corridor
+      const isCur = s.id===curSeg;
+      const pl=L.polyline(ll(s.coords),{color:isCur?(s.reversed?C_REV:C_CUR):C_MEMBER,weight:isCur?7:4,opacity:isCur?1:.9}).addTo(layer);
+      pl.on("click",()=>onSegClick(s));
+      if(isCur) addArrows(s);
+    } else {
+      // CORRIDORS: active corridor bold; everything else faint context (still clickable to add)
+      const pl=L.polyline(ll(s.coords),{color:inFocus?C_CUR:C_CTX,weight:inFocus?6:2,opacity:inFocus?1:.45}).addTo(layer);
+      pl.on("click",()=>onSegClick(s));
+      if(inFocus && s.id===curSeg) addArrows(s);
+    }
+  });
+  fitTo(fc, mode==="names"?0.35:0.6);
+  $("#legend").innerHTML = mode==="corr"
+    ? `Showing <b style="color:#9bbcff">active corridor</b> bold; other segments are faint. Click a faint one to <b>add</b> it; click a member to <b>pop it out</b>.`
+    : `Showing only the <b>current corridor</b>. The bold blue segment is selected — use Prev/Next to move along it.`;
+}
+
+function onSegClick(s){
+  if(mode==="names"){curSeg=s.id;renderMap();renderSide();}
+  else{ // corridor membership toggle
+    if(s.corridor_id===activeCorr){ moveSeg(s.id,"new"); }
+    else { moveSeg(s.id,activeCorr); }
+  }
+}
+
+/* ---------- sidebar ---------- */
+function renderSide(){ mode==="names"?renderNames():renderCorr(); }
+
+function renderNames(){
+  const b=$("#sidebody");
+  if(!DATA.segments.length){b.innerHTML="No segments.";return;}
+  if(curSeg==null) curSeg=DATA.segments[0].id;
+  const s=DATA.segments.find(x=>x.id===curSeg); const cor=corrOf(s.corridor_id);
+  const idx=DATA.segments.findIndex(x=>x.id===curSeg);
+  b.innerHTML=`
+   <div class="card">
+     <div><span class="tag">Corridor #${cor.order_index+1}</span>
+       ${s.reversed?'<span class="tag rev">reverse</span>':''}<span class="small">seg ${idx+1}/${DATA.segments.length}</span></div>
+     <label>Segment name <span class="small">(POI → POI)</span></label>
+     <div class="sug ${s.suggested?'':'empty'}" id="seg-sug" title="click to accept">${s.suggested?('💡 '+esc(s.suggested)):'no Google suggestion yet'}</div>
+     <input id="seg-name" type="text" value="${esc(s.name)}" placeholder="type a name or accept the suggestion"/>
+     <label>Carriageway</label>
+     <div class="row" id="div">
+       ${['','divided','undivided'].map(v=>`<div class="chip ${s.divided===v?'on':''}" data-v="${v}">${v||'unset'}</div>`).join('')}
+     </div>
+     <div class="row" style="margin-top:10px">
+       <button id="prev">◀ Prev</button><button id="next" class="grow">Next ▶</button>
+     </div>
+     <div class="hint"><kbd>Enter</kbd> save & next · click 💡 to accept suggestion · changes save automatically</div>
+   </div>
+   <div class="card">
+     <label>Corridor name <span class="small">(road: firstPOI → lastPOI)</span></label>
+     <div class="sug ${cor.suggested?'':'empty'}" id="corr-sug" title="click to accept">${cor.suggested?('💡 '+esc(cor.suggested)):'no suggestion yet'}</div>
+     <input id="corr-name" type="text" value="${esc(cor.name)}" placeholder="corridor name"/>
+   </div>`;
+  $("#seg-sug").onclick=()=>{ if(s.suggested){$("#seg-name").value=s.suggested; saveSeg(s.id,{name:s.suggested}); }};
+  $("#seg-name").onchange=e=>saveSeg(s.id,{name:e.target.value});
+  $("#seg-name").onkeydown=e=>{if(e.key==="Enter"){saveSeg(s.id,{name:e.target.value}); goSeg(1);}};
+  $("#div").querySelectorAll(".chip").forEach(ch=>ch.onclick=()=>{saveSeg(s.id,{divided:ch.dataset.v});});
+  $("#corr-sug").onclick=()=>{ if(cor.suggested){$("#corr-name").value=cor.suggested; saveCorr(cor.id,{name:cor.suggested}); }};
+  $("#corr-name").onchange=e=>saveCorr(cor.id,{name:e.target.value});
+  $("#prev").onclick=()=>goSeg(-1); $("#next").onclick=()=>goSeg(1);
+  setTimeout(()=>{const n=$("#seg-name");if(n){n.focus();n.setSelectionRange(n.value.length,n.value.length);}},0);
+}
+function goSeg(d){const i=DATA.segments.findIndex(x=>x.id===curSeg);const j=Math.min(DATA.segments.length-1,Math.max(0,i+d));curSeg=DATA.segments[j].id;renderMap();renderNames();}
+
+function renderCorr(){
+  const b=$("#sidebody");
+  b.innerHTML=`<div class="small" style="margin-bottom:8px">Active corridor is editable on the map. Drag segments between corridors. Use Split/Merge to restructure.</div>
+    <div id="corrlist"></div>`;
+  const list=$("#corrlist");
+  DATA.corridors.forEach(cor=>{
+    const segs=segsOfCorr(cor.id); const col=cor.id===activeCorr?C_CUR:"#3a414d";
+    const div=document.createElement("div"); div.className="corr"+(cor.id===activeCorr?" active":"");
+    div.innerHTML=`<h4 data-cid="${cor.id}"><span class="sw" style="background:${col}"></span>
+        <span class="cn">#${cor.order_index+1} · ${esc(cor.name||cor.suggested||'unnamed')} <span class="pill">(${segs.length})</span></span></h4>
+      <div class="cbtns">
+        <button data-act="active" data-cid="${cor.id}">${cor.id===activeCorr?'● active':'set active'}</button>
+        <button data-act="mergeNext" data-cid="${cor.id}">merge ↓ next</button>
+      </div>
+      <div class="seglist" data-cid="${cor.id}"></div>`;
+    const sl=div.querySelector(".seglist");
+    segs.forEach(s=>{
+      const row=document.createElement("div"); row.className="seg"+(curSeg===s.id?" sel":""); row.draggable=true; row.dataset.sid=s.id;
+      row.innerHTML=`<span class="si">${s.seq+1}</span><span class="sn">${esc(s.name||s.suggested||('seg '+s.seg_index))}</span>
+        <button data-act="split" data-cid="${cor.id}" data-seq="${s.seq}" title="split after this segment">✂</button>`;
+      row.onclick=e=>{ if(e.target.dataset.act)return; curSeg=s.id; renderMap(); highlightSel(); };
+      row.ondragstart=e=>{e.dataTransfer.setData("sid",s.id);};
+      sl.appendChild(row);
+    });
+    sl.ondragover=e=>{e.preventDefault();sl.parentElement.classList.add("dragover");};
+    sl.ondragleave=()=>sl.parentElement.classList.remove("dragover");
+    sl.ondrop=e=>{e.preventDefault();sl.parentElement.classList.remove("dragover");const sid=+e.dataTransfer.getData("sid");moveSeg(sid,cor.id);};
+    list.appendChild(div);
+  });
+  list.querySelectorAll("h4").forEach(h=>h.onclick=()=>{activeCorr=+h.dataset.cid;renderMap();renderCorr();});
+  list.querySelectorAll("button[data-act]").forEach(btn=>btn.onclick=async e=>{
+    e.stopPropagation(); const act=btn.dataset.act, cid=+btn.dataset.cid;
+    if(act==="active"){activeCorr=cid;renderMap();renderCorr();}
+    else if(act==="split"){await jpost(`/api/corridors/${cid}/split`,{after_seq:+btn.dataset.seq}); await reload();}
+    else if(act==="mergeNext"){const i=DATA.corridors.findIndex(c=>c.id===cid); const nx=DATA.corridors[i+1];
+      if(!nx){alert("no corridor after this one");return;} await jpost(`/api/corridors/${cid}/merge`,{target_id:nx.id}); await reload();}
+  });
+}
+function highlightSel(){document.querySelectorAll(".seg").forEach(r=>r.classList.toggle("sel",+r.dataset.sid===curSeg));}
+
+/* ---------- mutations ---------- */
+async function saveSeg(id,patch){ Object.assign(DATA.segments.find(s=>s.id===id),patch); await jpatch("/api/segments/"+id,patch);
+  if(mode==="names") renderNames(); }
+async function saveCorr(id,patch){ Object.assign(corrOf(id),patch); await jpatch("/api/corridors/"+id,patch); }
+async function moveSeg(sid,target){ await jpost(`/api/segments/${sid}/move`,{corridor_id:target}); await reload(); }
+async function reload(){const keep=activeCorr; lastFit=null; DATA=await api("/api/projects/"+PID);
+  if(!DATA.corridors.find(c=>c.id===keep)) activeCorr=DATA.corridors[0]&&DATA.corridors[0].id;
+  renderMap(); renderSide();}
+
+/* ---------- enrichment ---------- */
+async function runEnrich(){
+  if(!PID){alert("open a project first");return;}
+  const offline=$("#offline").checked, key=$("#gkey").value.trim(), mode_=$("#mode-sel").value;
+  if(!offline&&!key){alert("enter a Google API key, or tick offline to use only cached results");return;}
+  await jpost(`/api/projects/${PID}/enrich`,{key,mode:mode_,offline});
+  pollProgress();
+}
+async function pollProgress(){
+  const t=setInterval(async()=>{
+    const st=await api(`/api/projects/${PID}/enrich/status`);
+    const pct=st.total?Math.round(st.done/st.total*100):0;
+    $("#prog>div").style.width=pct+"%"; $("#progtxt").textContent=st.running?`${st.phase} ${st.done}/${st.total}`:"";
+    if(!st.running){clearInterval(t);$("#prog>div").style.width="0%";await reload();}
+  },900);
+}
+
+/* ---------- misc ---------- */
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function setMode(m){mode=m;$("#m-names").classList.toggle("on",m==="names");$("#m-corr").classList.toggle("on",m==="corr");renderMap();renderSide();}
+
+window.addEventListener("DOMContentLoaded",()=>{
+  initMap();
+  $("#proj").onchange=e=>{ if(e.target.value) openProject(+e.target.value); };
+  $("#newbtn").onclick=()=>$("#file").click();
+  $("#file").onchange=async()=>{const f=$("#file").files[0];if(!f)return;
+    const btn=$("#newbtn"); const orig=btn.textContent; btn.textContent="Importing…"; btn.disabled=true;
+    try{
+      const fd=new FormData(); fd.append("file",f,f.name);
+      const res=await api("/api/projects",{method:"POST",body:fd});
+      await loadProjects(res.project_id);
+    }catch(err){ alert("Import failed.\n"+err.message+"\n\nMake sure the file is a GeoJSON FeatureCollection of LineStrings."); }
+    finally{ btn.textContent=orig; btn.disabled=false; $("#file").value=""; }
+  };
+  $("#m-names").onclick=()=>setMode("names");
+  $("#m-corr").onclick=()=>setMode("corr");
+  $("#enrich").onclick=runEnrich;
+  $("#export").onclick=()=>{ if(PID) window.location=`/api/projects/${PID}/export`; };
+  document.addEventListener("keydown",e=>{
+    if(document.activeElement.tagName==="INPUT")return;
+    if(mode==="names"){ if(e.key==="ArrowRight")goSeg(1); else if(e.key==="ArrowLeft")goSeg(-1); }
+  });
+  loadProjects();
+});
+</script>
+</body>
+</html>

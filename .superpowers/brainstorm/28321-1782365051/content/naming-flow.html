@@ -1,0 +1,74 @@
+<h2>How does the inspector move through 1,031 names without it feeling endless?</h2>
+<p class="subtitle">Top: the corrected segment card (pre-filled name, two suggestions, uuid kept, no carriageway). Bottom: pick how they advance — this is the biggest "feels effortless vs feels endless" lever.</p>
+
+<style>
+  .nf-card{max-width:560px;margin:0 auto 22px;background:#10141c;border:1px solid #2a3142;border-radius:12px;overflow:hidden}
+  .nf-ctx{display:flex;align-items:center;gap:8px;padding:9px 13px;background:#161b24;border-bottom:1px solid #232936;font-size:12px;color:#9aa3b2}
+  .nf-ctx b{color:#cfd6e4}
+  .nf-ctx .pos{margin-left:auto;font-size:11px;color:#6b7488}
+  .nf-body{padding:14px 14px 16px}
+  .nf-lab{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#6b7488;margin-bottom:5px}
+  .nf-input{display:flex;align-items:center;gap:8px;background:#0e1320;border:1px solid #34507a;border-radius:8px;padding:9px 11px}
+  .nf-input input{flex:1;background:transparent;border:0;color:#eaf0fb;font-size:15px;font-weight:600}
+  .nf-input .clear{color:#5e6b80;font-size:13px}
+  .nf-hint{font-size:11px;color:#5e6b80;margin:5px 2px 13px}
+  .nf-sugs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .nf-sug{display:flex;flex-direction:column;gap:2px;padding:7px 12px;border-radius:8px;background:#15233a;border:1px solid #29405f;cursor:pointer}
+  .nf-sug small{font-size:9px;letter-spacing:.06em;color:#5e6b80}
+  .nf-sug span{font-size:13px;color:#9cc0ff;font-weight:600}
+  .nf-foot{display:flex;align-items:center;gap:10px;border-top:1px solid #232936;padding-top:12px}
+  .nf-saved{font-size:12px;color:#54c08a}
+  .nf-uuid{font-family:ui-monospace,Menlo,monospace;font-size:10px;color:#566;background:#161b24;padding:3px 7px;border-radius:5px}
+  .nf-next{margin-left:auto;background:#2563eb;color:#fff;font-weight:700;border-radius:8px;padding:9px 16px;font-size:13px}
+  .nf-kbd{font-family:ui-monospace,monospace;font-size:10px;background:#222a38;color:#9aa3b2;border:1px solid #333c4d;border-radius:4px;padding:1px 5px}
+</style>
+
+<div class="nf-card">
+  <div class="nf-ctx">📍 Corridor <b>G.S. Road</b> · segment <b>2 of 3</b> <span class="pos">item 414 / 1,031</span></div>
+  <div class="nf-body">
+    <div class="nf-lab">Name (pre-filled from import — edit or replace)</div>
+    <div class="nf-input"><input value="Route 385 - Segment 2"><span class="clear">✕</span></div>
+    <div class="nf-hint">The box already holds the imported name. Tap a suggestion below to overwrite, or just type.</div>
+
+    <div class="nf-lab">Suggestions</div>
+    <div class="nf-sugs">
+      <div class="nf-sug"><small>GEOCODE</small><span>G.S. Road</span></div>
+      <div class="nf-sug"><small>ROADS</small><span>Jail Road</span></div>
+    </div>
+
+    <div class="nf-foot">
+      <span class="nf-saved">✓ saved</span>
+      <span class="nf-uuid">uuid 70e31f26…9b</span>
+      <span class="nf-next">Save &amp; next ↵</span>
+    </div>
+  </div>
+</div>
+
+<h3 style="text-align:center;margin-bottom:4px">Pick the advance model</h3>
+<p class="subtitle" style="text-align:center">How they get from one name to the next 1,030.</p>
+
+<div class="options">
+  <div class="option" data-choice="hybrid" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Free browse + a "Next unnamed →" accelerator <span style="color:#54c08a;font-size:12px">(recommended)</span></h3>
+      <p>Scroll/click anything you want in the panel <em>and</em> a persistent button (plus the <span class="nf-kbd">Enter</span> key) that jumps straight to the next still-unnamed segment, auto-panning the map. Best of both: full control for the curious, a one-key fast lane for grinding through. Progress bar shows how close to done.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="guided" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Guided queue only</h3>
+      <p>App drives: shows one unnamed segment at a time, you name it, it auto-advances to the next. Minimal decisions, very focused — but no freedom to jump around, revisit, or work a specific area of the map first. Can feel like a conveyor belt.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="free" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Free browse only</h3>
+      <p>Just the panel + map, no advance helper. Inspector decides what to click next every time. Maximum control, but naming 1,031 items means constant scrolling and "where was I?" — slow and easy to miss some.</p>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:16px">Also baked in here for your confirmation: <b>name pre-filled</b> from import ✓ · <b>two suggestions</b> (merge to one if equal) ✓ · <b>uuid kept</b> &amp; shown subtly ✓ · <b>no carriageway</b> ✓. React in the terminal — and tell me if the "Save &amp; next" + Enter affordance feels right.</p>

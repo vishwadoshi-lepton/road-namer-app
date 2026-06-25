@@ -1,0 +1,94 @@
+<h2>Map interactions — and the fix for your three annoyances</h2>
+<p class="subtitle">Three states: default → hover → selected. Map clicks only <b>select/focus</b>, never edit membership. One corridor open at a time. Plus a question: should the map color routes by named vs unnamed?</p>
+
+<style>
+  .mi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px}
+  .mi-mini{background:#1a2230;border:1px solid #2a3142;border-radius:10px;overflow:hidden}
+  .mi-cap{padding:7px 10px;font-size:11px;color:#cfd6e4;background:#161b24;border-bottom:1px solid #232936}
+  .mi-cap b{color:#7fa9ff}
+  .mi-tip{position:absolute;background:#0b0f16;border:1px solid #34507a;color:#dfe7f5;font-size:9px;border-radius:5px;padding:3px 6px;white-space:nowrap}
+  .mi-rules{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px}
+  .mi-r{background:#141a24;border:1px solid #263042;border-radius:8px;padding:9px 11px;font-size:12px;color:#bcc6d6}
+  .mi-r b{color:#7fa9ff}
+  .mi-fix{background:#15211a;border:1px solid #2c4a36;border-radius:8px;padding:9px 11px;font-size:12px;color:#a9d8bd}
+  .mi-fix b{color:#54c08a}
+  .mi-leg{display:flex;gap:16px;justify-content:center;font-size:11px;color:#9aa3b2;margin:4px 0 16px}
+  .mi-leg i{display:inline-block;width:16px;height:4px;border-radius:2px;vertical-align:middle;margin-right:5px}
+</style>
+
+<div class="mi-grid">
+  <!-- DEFAULT -->
+  <div class="mi-mini">
+    <div class="mi-cap"><b>Default</b> — all corridors + standalone, same color. Children hidden.</div>
+    <div style="position:relative">
+      <svg viewBox="0 0 200 150" width="100%" height="130">
+        <polyline points="20,120 50,100 90,108 120,92" fill="none" stroke="#4f7bbf" stroke-width="3"/>
+        <polyline points="150,30 162,70 140,100 170,128" fill="none" stroke="#4f7bbf" stroke-width="3"/>
+        <polyline points="30,40 70,28 110,46 140,24" fill="none" stroke="#4f7bbf" stroke-width="3"/>
+        <polyline points="120,130 150,140 180,120" fill="none" stroke="#4f7bbf" stroke-width="3"/>
+      </svg>
+    </div>
+  </div>
+  <!-- HOVER -->
+  <div class="mi-mini">
+    <div class="mi-cap"><b>Hover</b> — corridor lifts + tooltip. Cursor = pointer.</div>
+    <div style="position:relative">
+      <span class="mi-tip" style="top:8px;left:30px">Route 12 · 5 segs · 2 unnamed</span>
+      <svg viewBox="0 0 200 150" width="100%" height="130">
+        <polyline points="20,120 50,100 90,108 120,92" fill="none" stroke="#2f405e" stroke-width="3"/>
+        <polyline points="150,30 162,70 140,100 170,128" fill="none" stroke="#2f405e" stroke-width="3"/>
+        <polyline points="30,40 70,28 110,46 140,24" fill="none" stroke="#7fb0ff" stroke-width="5"/>
+        <polyline points="120,130 150,140 180,120" fill="none" stroke="#2f405e" stroke-width="3"/>
+      </svg>
+    </div>
+  </div>
+  <!-- SELECTED -->
+  <div class="mi-mini">
+    <div class="mi-cap"><b>Selected</b> — corridor + numbered segments; others fade. Segments now clickable.</div>
+    <div style="position:relative">
+      <svg viewBox="0 0 200 150" width="100%" height="130">
+        <polyline points="20,120 50,100 90,108 120,92" fill="none" stroke="#243349" stroke-width="3"/>
+        <polyline points="150,30 162,70 140,100 170,128" fill="none" stroke="#243349" stroke-width="3"/>
+        <polyline points="120,130 150,140 180,120" fill="none" stroke="#243349" stroke-width="3"/>
+        <!-- selected corridor, segments alternating + nodes + seq labels -->
+        <polyline points="30,40 70,28" stroke="#4f8cff" stroke-width="5" fill="none"/>
+        <polyline points="70,28 110,46" stroke="#9ec1ff" stroke-width="5" fill="none"/>
+        <polyline points="110,46 140,24" stroke="#4f8cff" stroke-width="5" fill="none"/>
+        <circle cx="30" cy="40" r="4" fill="#fff"/><circle cx="70" cy="28" r="4" fill="#fff"/><circle cx="110" cy="46" r="4" fill="#fff"/><circle cx="140" cy="24" r="4" fill="#fff"/>
+        <text x="44" y="28" font-size="9" fill="#cfe0ff">1</text>
+        <text x="86" y="30" font-size="9" fill="#cfe0ff">2</text>
+        <text x="120" y="30" font-size="9" fill="#cfe0ff">3</text>
+      </svg>
+    </div>
+  </div>
+</div>
+
+<div class="mi-rules">
+  <div class="mi-r"><b>Click corridor</b> (map or panel row) → selects it. Highlights on map, panel scrolls to it &amp; expands. Two-way: map ↔ panel stay in sync.</div>
+  <div class="mi-r"><b>Click a segment</b> (only after its corridor is selected) → focuses that segment's card in the panel + nudges map zoom. <b>Just focus — no membership change.</b></div>
+  <div class="mi-r"><b>Street View</b> 🧍 → drag pegman onto a road to confirm the real-world name. Opens in a dismissible overlay on the map.</div>
+  <div class="mi-r"><b>Deselect</b> → click empty map, press <span style="font-family:monospace;background:#222a38;padding:1px 5px;border-radius:4px">Esc</span>, or pick another corridor.</div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:18px">
+  <div class="mi-fix"><b>✓ "Merge below" gone</b> — corridors come from your data (parent_route_id). No split/merge/move at all.</div>
+  <div class="mi-fix"><b>✓ Corridors close now</b> — single-open accordion: selecting a new corridor collapses the previous one. Never a wall of open lists.</div>
+  <div class="mi-fix"><b>✓ Map clicks are clear</b> — they only select/focus. Nothing ever gets "added to the current corridor" by clicking.</div>
+</div>
+
+<h3 style="text-align:center;margin-bottom:4px">One question: color the map by status?</h3>
+<div class="mi-leg"><span><i style="background:#4f7bbf"></i>unnamed</span><span><i style="background:#54c08a"></i>named</span><span><i style="background:#4f8cff"></i>selected</span></div>
+<div class="options">
+  <div class="option" data-choice="status-color" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content"><h3>Yes — paint named routes green, unnamed blue <span style="color:#54c08a;font-size:12px">(recommended)</span></h3>
+      <p>The map itself becomes the progress view: at a glance the inspector sees which roads still need names and which areas are done. Strong motivator, no extra clicks.</p></div>
+  </div>
+  <div class="option" data-choice="no-status" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content"><h3>No — keep every route one neutral color</h3>
+      <p>Simpler, less visual noise; progress lives only in the header counter. Cleaner map, but you can't see <em>where</em> the unnamed ones are.</p></div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:16px">Click your pick or tell me in the terminal. Anything wrong with the selection/hover/street-view rules? Next up: <b>edge cases</b> — the reversed-direction twins and broken-corridor orphans.</p>

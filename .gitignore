@@ -1,0 +1,13 @@
+# runtime database
+roadnamer.db
+roadnamer.db-journal
+*.sqlite
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# os
+.DS_Store
