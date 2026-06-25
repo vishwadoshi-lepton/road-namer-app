@@ -24,36 +24,56 @@ def _seg(f):
             "parent_route_id": p.get("parent_route_id"),
             "segment_order": p.get("segment_order")}
 
-def build_workset(features):
-    """Apply the synced-leaf filter + all-or-nothing corridor rule."""
+def build_workset(features, require_synced=True):
+    """Build corridors + standalone from leaf routes.
+
+    require_synced=True (default): keep only synced leaves; a parent forms a corridor
+      only if ALL its children are synced, otherwise its synced children become standalone.
+    require_synced=False: keep every leaf regardless of sync_status; every
+      parent_route_id group forms a corridor; parentless leaves become standalone.
+      Used to add unsynced routes (e.g. outside-jurisdiction roads).
+    """
     feats = [f for f in features
              if (f.get("geometry") or {}).get("type") == "LineString"
              and len(f["geometry"]["coordinates"]) >= 2]
     by_props = [(f, f.get("properties") or {}) for f in feats]
 
-    # index ALL children (any sync) by parent to evaluate intactness
+    def keep(p):
+        if p.get("has_children") != 0:
+            return False
+        return p.get("sync_status") == "synced" if require_synced else True
+
+    # index ALL children (any sync) by parent
     children = {}
     for f, p in by_props:
         if p.get("has_children") == 0 and p.get("parent_route_id"):
             children.setdefault(p["parent_route_id"], []).append((f, p))
 
-    intact_parents = {par for par, kids in children.items()
-                      if all(k[1].get("sync_status") == "synced" for k in kids)}
+    if require_synced:
+        # a parent is a corridor only if every one of its children is synced
+        intact_parents = {par for par, kids in children.items()
+                          if all(k[1].get("sync_status") == "synced" for k in kids)}
+    else:
+        # sync-agnostic: every parent group forms a corridor
+        intact_parents = set(children.keys())
 
     corridors, standalone = [], []
     code = 0
-    # intact corridors, ordered by segment_order
+    # corridors, ordered by segment_order
     for par in children:
         if par not in intact_parents:
             continue
-        kids = sorted(children[par], key=lambda k: k[1].get("segment_order") or 0)
+        kids = sorted([(f, p) for f, p in children[par] if keep(p)],
+                      key=lambda k: k[1].get("segment_order") or 0)
+        if not kids:
+            continue
         code += 1
         corridors.append({"cor_code": f"cor_{code:03d}",
                           "segments": [_seg(f) for f, _ in kids]})
 
-    # standalone = synced leaf that is parentless OR child of a broken parent
+    # standalone = kept leaf that is parentless OR child of a non-corridor parent
     for f, p in by_props:
-        if p.get("has_children") != 0 or p.get("sync_status") != "synced":
+        if not keep(p):
             continue
         par = p.get("parent_route_id")
         if par and par in intact_parents:
