@@ -563,7 +563,7 @@ function drawChildSegments(corrId) {
       zIndex: 1
     });
 
-    segPolylines[seg.id] = { core, casing };
+    segPolylines[seg.id] = { core, casing, nodes: [] };
 
     core.addListener('mouseover', () => setSegHover(seg.id, true));
     core.addListener('mouseout', () => setSegHover(seg.id, false));
@@ -587,6 +587,7 @@ function drawChildSegments(corrId) {
       const endNode = new google.maps.Marker({
         position: path[path.length - 1], map: googleMap, icon: nodeIcon, zIndex: 5, clickable: false
       });
+      segPolylines[seg.id].nodes = [startNode, endNode];
       childPolylines.push(startNode, endNode);
     }
 
@@ -960,9 +961,7 @@ async function saveSegName(segId, value) {
     if (inp) {
       inp.classList.toggle('named', !!trimmed);
     }
-    // Recolor map (standalone segments use synthetic key 'sa_<segId>')
-    const recolorId = seg.corridor_id !== null ? seg.corridor_id : ('sa_' + segId);
-    updateCorrPolylineColor(recolorId);
+    recolorAfterSave(segId);
     updateProgressUI();
     showSaveIndicator();
   } catch (err) {
@@ -984,15 +983,48 @@ async function saveCorrName(corrId, value) {
   }
 }
 
-function updateCorrPolylineColor(corrId) {
+// Instantly reflect a just-saved segment's named status everywhere it shows.
+function recolorAfterSave(segId) {
+  const seg = projectData && projectData.segments.find(s => s.id === segId);
+  if (!seg) return;
+  const segCol = seg.named ? COLOR_NAMED : COLOR_UNNAMED;
+  // Child segment line + endpoint nodes (if currently drawn)
+  const entry = segPolylines[segId];
+  if (entry) {
+    entry.core.setOptions({ strokeColor: segCol });
+    (entry.nodes || []).forEach(n => {
+      const ic = n.getIcon();
+      if (ic) n.setIcon(Object.assign({}, ic, { fillColor: segCol }));
+    });
+  }
+  // Segment card accent (named -> green inset)
+  const card = document.getElementById(`seg-card-${segId}`);
+  if (card) card.classList.toggle('named', seg.named);
+  // Parent corridor / standalone (dot, overview, meta count)
+  const corrId = seg.corridor_id !== null ? seg.corridor_id : ('sa_' + segId);
+  recolorCorr(corrId);
+}
+
+// A corridor/standalone is "named" (green) only when ALL its segments are named.
+function recolorCorr(corrId) {
+  const item = getVisibleCorridors().find(c => c.id === corrId);
+  if (!item) return;
+  const segs = segmentsOfItem(item);
+  const allNamed = segs.length > 0 && segs.every(s => s.named);
+  const col = allNamed ? COLOR_NAMED : COLOR_UNNAMED;
+  // Overview polyline (when selected it's hidden under the child segments, so skip)
   const pl = corridorPolylines[corrId];
-  if (!pl) return;
-  pl.setOptions({ strokeColor: corrColor(corrId) });
-  // Update panel dot
+  if (pl && corrId !== selectedCorrId) pl.setOptions({ strokeColor: col });
+  // Panel row: dot reflects status even while selected; refresh the "N unnamed" meta
   const row = document.getElementById(`corr-row-${corrId}`);
   if (row) {
     const dot = row.querySelector('.corr-dot');
-    if (dot) dot.style.background = corrColor(corrId);
+    if (dot) dot.style.background = col;
+    const meta = row.querySelector('.corr-meta');
+    if (meta) {
+      const unnamed = segs.filter(s => !s.named).length;
+      meta.textContent = `${segs.length} seg${segs.length !== 1 ? 's' : ''} · ${unnamed} unnamed`;
+    }
   }
 }
 
