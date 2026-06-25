@@ -97,6 +97,7 @@ CREATE TABLE gcache(k TEXT PRIMARY KEY, v TEXT);
 
 Append:
 ```
+python-dotenv==1.0.1
 pytest==8.3.2
 httpx==0.27.2
 ```
@@ -421,7 +422,7 @@ def test_import_creates_workset(tmp_path):
     c = make_client(tmp_path)
     r = upload(c); assert r.status_code == 200
     body = r.json()
-    assert body["leaves"] == 5      # P1-S1,P1-S2,P2-S1,SA1,TW,TWR => 6? see note
+    assert body["leaves"] == 6      # P1-S1,P1-S2,P2-S1,SA1,TW,TWR
     assert body["corridors"] == 1
 
 def test_get_project_marks_unnamed_and_twin(tmp_path):
@@ -440,8 +441,6 @@ def test_delete_project(tmp_path):
     assert c.get(f"/api/projects/{pid}").status_code == 404
 ```
 
-> Note: the fixture yields leaves P1-S1, P1-S2, P2-S1, SA1, TW, TWR = **6** synced leaves. Set the assertion in `test_import_creates_workset` to `body["leaves"] == 6`. (Author the assertion to 6 when writing.)
-
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_api.py -v`
@@ -450,12 +449,12 @@ Expected: FAIL (no `app` module / no route).
 - [ ] **Step 3: Implement `app.py`**
 
 ```python
-import io, json, os, math
+import json, os, math
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, UploadFile, File, Body
-from fastapi.responses import StreamingResponse
-from fastapi.staticfiles import StaticFiles
-import db, importer, export
+import db, importer
 
+load_dotenv()  # read keys from root .env if present
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.environ.get("ROADNAMER_DB", os.path.join(HERE, "roadnamer.db"))
 
@@ -464,9 +463,9 @@ app = FastAPI(title="Road Namer")
 def conn():
     return db.connect(DB)
 
-@app.on_event("startup")
-def _startup():
-    c = conn(); db.init_db(c); c.close()
+# initialise schema on import so tables exist for any connection (incl. TestClient
+# constructed without a context manager). init_db is idempotent (CREATE IF NOT EXISTS).
+_c = conn(); db.init_db(_c); _c.close()
 
 def _point_at(coords, frac):
     def hav(a, b):
@@ -560,17 +559,17 @@ def get_project(pid: int):
 # static frontend (mounted last; added in Task 9)
 ```
 
-Add `export` import now even though `export.py` lands in Task 8 — create an empty `export.py` placeholder with `def build_export(*a, **k): ...` to keep imports valid, replaced in Task 8. (Write `export.py` containing `def build_export(project, corridors, segments): return {}` for now.)
+> `export.py` is created later (Task 7). Do **not** import `export` in `app.py` yet — Task 7 adds that import together with the export endpoint. `app.py` here imports only `db, importer`.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `python -m pytest tests/test_api.py -v`
-Expected: PASS (3 passed). Fix the `leaves == 6` assertion per the note.
+Expected: PASS (3 passed).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app.py export.py tests/test_api.py
+git add app.py tests/test_api.py
 git commit -m "feat: import persistence + project CRUD API"
 ```
 
@@ -865,6 +864,8 @@ def run(project_id, key, db_path, offline=False):
     return {"leaves": len(segs), "calls": len(segs) * 2}
 
 if __name__ == "__main__":
+    from dotenv import load_dotenv
+    load_dotenv()  # read GOOGLE_ENRICH_KEY from root .env if present
     offline = "--offline" in sys.argv
     pid = int([a for a in sys.argv[1:] if not a.startswith("--")][0])
     key = os.environ.get("GOOGLE_ENRICH_KEY", "")
@@ -953,7 +954,9 @@ def build_export(project, corridors, segments):
             "corridors": corridors_out}
 ```
 
-- [ ] **Step 4: Add the endpoint in `app.py`** (replace the static-mount comment region top)
+- [ ] **Step 4: Add the endpoint in `app.py`**
+
+First add these imports at the top of `app.py` (alongside the existing imports): `import io`, `import export`, and `from fastapi.responses import StreamingResponse`. Then add the endpoint:
 
 ```python
 @app.get("/api/projects/{pid}/export")
@@ -1010,6 +1013,8 @@ Run: `python -m pytest tests/test_api.py -k config -v`
 Expected: FAIL (404).
 
 - [ ] **Step 3: Implement in `app.py`** (config route, then static mount at very end of file)
+
+First add `from fastapi.staticfiles import StaticFiles` at the top of `app.py`. Then add the config route and, as the **last** statements in the file, the static mount + entrypoint:
 
 ```python
 @app.get("/api/config")
