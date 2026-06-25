@@ -725,10 +725,8 @@ function selectCorridor(corrId, source) {
   // Map: re-render with selection
   renderMap();
 
-  // Pan to corridor
-  if (source === 'panel') {
-    fitMapToCorridor(corrId);
-  }
+  // Fit the map to the corridor/standalone from ANY selection source (map, panel, next-unnamed)
+  fitMapToCorridor(corrId);
 
   // Panel: open accordion
   openAccordion(corrId, source !== 'panel');
@@ -1094,7 +1092,6 @@ function jumpToNextUnnamed() {
       const seg = unnamedSegs[0];
       // Select corridor if needed
       selectCorridor(corr.id, 'next-unnamed');
-      fitMapToCorridor(corr.id);
       // After render, focus the input
       setTimeout(() => {
         focusSegmentCard(seg.id);
