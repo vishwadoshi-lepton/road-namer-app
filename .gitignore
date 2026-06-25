@@ -11,3 +11,5 @@ venv/
 
 # os
 .DS_Store
+
+.env
