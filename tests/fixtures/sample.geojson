@@ -1,0 +1,20 @@
+{"type":"FeatureCollection","features":[
+ {"type":"Feature","geometry":{"type":"LineString","coordinates":[[91.880,25.561],[91.882,25.563]]},
+  "properties":{"uuid":"P1","route_name":"Route 1","parent_route_id":null,"has_children":1,"sync_status":"synced","segment_order":null}},
+ {"type":"Feature","geometry":{"type":"LineString","coordinates":[[91.880,25.561],[91.881,25.562]]},
+  "properties":{"uuid":"P1-S1","route_name":"Route 1 - Segment 1","parent_route_id":"P1","has_children":0,"sync_status":"synced","segment_order":1}},
+ {"type":"Feature","geometry":{"type":"LineString","coordinates":[[91.881,25.562],[91.882,25.563]]},
+  "properties":{"uuid":"P1-S2","route_name":"Route 1 - Segment 2","parent_route_id":"P1","has_children":0,"sync_status":"synced","segment_order":2}},
+ {"type":"Feature","geometry":{"type":"LineString","coordinates":[[91.900,25.570],[91.901,25.571]]},
+  "properties":{"uuid":"P2-S1","route_name":"Route 2 - Segment 1","parent_route_id":"P2","has_children":0,"sync_status":"synced","segment_order":1}},
+ {"type":"Feature","geometry":{"type":"LineString","coordinates":[[91.901,25.571],[91.902,25.572]]},
+  "properties":{"uuid":"P2-S2","route_name":"Route 2 - Segment 2","parent_route_id":"P2","has_children":0,"sync_status":"invalid","segment_order":2}},
+ {"type":"Feature","geometry":{"type":"LineString","coordinates":[[91.910,25.580],[91.912,25.582]]},
+  "properties":{"uuid":"SA1","route_name":"Route 3","parent_route_id":null,"has_children":0,"sync_status":"synced","segment_order":null}},
+ {"type":"Feature","geometry":{"type":"LineString","coordinates":[[91.920,25.590],[91.922,25.592]]},
+  "properties":{"uuid":"TW","route_name":"Route 4","parent_route_id":null,"has_children":0,"sync_status":"synced","segment_order":null}},
+ {"type":"Feature","geometry":{"type":"LineString","coordinates":[[91.922,25.592],[91.920,25.590]]},
+  "properties":{"uuid":"TWR","route_name":"Route 4 (Reversed)","parent_route_id":null,"has_children":0,"sync_status":"synced","segment_order":null}},
+ {"type":"Feature","geometry":{"type":"LineString","coordinates":[[91.930,25.600],[91.931,25.601]]},
+  "properties":{"uuid":"DROP","route_name":"Route 5","parent_route_id":null,"has_children":0,"sync_status":"invalid","segment_order":null}}
+]}
