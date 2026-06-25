@@ -146,7 +146,10 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 }
 .seg-card:last-child { margin-bottom: 0; }
 .seg-card.focused { border-color: #4f8cff; box-shadow: 0 0 0 2px #c7d9ff; }
-.seg-ref { font-size: 11px; color: #94a3b8; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.seg-card.seg-hovered { background: #fffbeb; border-color: #fbbf24; }
+.seg-card.seg-focused { border-color: #4f8cff; box-shadow: 0 0 0 2px #c7d9ff; }
+.seg-ref { font-size: 11px; color: #94a3b8; margin-bottom: 6px; display: flex; align-items: center; }
+.seg-badge { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: #0e1320; color: #fff; font-size: 11px; font-weight: 700; margin-right: 6px; flex-shrink: 0; vertical-align: middle; }
 .seg-name-input {
   width: 100%; border: 1px solid #e2e8f0; border-radius: 6px; padding: 7px 9px;
   font-size: 13px; color: #1a1a2e; outline: none; background: #fff; margin-bottom: 7px;
@@ -269,6 +272,9 @@ let childPolylines = [];         // child segment polylines when a corridor is s
 let corridorPolylines = {};      // corrId -> google.maps.Polyline (top-level)
 let saveTimers = {};             // segId -> debounce timer
 let mapsLoaded = false;
+let segPolylines = {};           // segId -> { core: Polyline, casing: Polyline|null }
+let hoveredSegId = null;
+let focusedSegId = null;         // the currently "focused" segment (named state, selected for editing)
 
 // ── Helpers ────────────────────────────────────────────────────────
 function esc(s) {
@@ -480,16 +486,16 @@ function renderMap() {
 
     const isSelected = corr.id === selectedCorrId;
     const color = corrColor(corr.id);
-    const weight = isSelected ? 6 : 4;
     const opacity = (selectedCorrId && !isSelected) ? 0.3 : 1;
 
     const pl = new google.maps.Polyline({
       path,
       map: googleMap,
       strokeColor: color,
-      strokeWeight: weight,
+      strokeWeight: 7,
       strokeOpacity: opacity,
-      zIndex: isSelected ? 10 : 1
+      zIndex: isSelected ? 10 : 1,
+      icons: [{ icon: { path: google.maps.SymbolPath.FORWARD_OPEN_ARROW, scale: 2, strokeColor: '#ffffff', strokeWeight: 1.5 }, repeat: '90px' }]
     });
 
     corridorPolylines[corr.id] = pl;
@@ -528,57 +534,160 @@ function renderMap() {
 function drawChildSegments(corrId) {
   clearChildPolylines();
   const segs = segmentsOfCorridor(corrId);
-  const shades = ['#2563eb', '#1d4ed8', '#3b82f6', '#60a5fa'];
+
+  const arrowIcon = [{
+    icon: { path: google.maps.SymbolPath.FORWARD_OPEN_ARROW, scale: 2, strokeColor: '#ffffff', strokeWeight: 1.5 },
+    repeat: '90px'
+  }];
 
   segs.forEach((seg, idx) => {
     const path = lngLatToGM(seg.coords);
     if (!path.length) return;
-    const color = shades[idx % shades.length];
 
-    const pl = new google.maps.Polyline({
+    const segColor = seg.named
+      ? (idx % 2 === 0 ? '#3a9d6e' : '#7ad6a8')
+      : (idx % 2 === 0 ? '#4f8cff' : '#93b8f5');
+
+    // Casing polyline (drawn first = under core)
+    const casing = new google.maps.Polyline({
       path,
-      map: googleMap,
-      strokeColor: color,
-      strokeWeight: 4,
-      strokeOpacity: 0.9,
-      zIndex: 20
+      map: null,  // hidden by default
+      strokeColor: '#fbbf24',
+      strokeWeight: 14,
+      strokeOpacity: 0.85,
+      zIndex: 1
     });
 
-    pl.addListener('click', () => focusSegmentCard(seg.id));
-    childPolylines.push(pl);
+    // Core polyline
+    const core = new google.maps.Polyline({
+      path,
+      map: googleMap,
+      strokeColor: segColor,
+      strokeWeight: 7,
+      strokeOpacity: 0.9,
+      zIndex: 1,
+      icons: arrowIcon
+    });
 
-    // Endpoint nodes
+    segPolylines[seg.id] = { core, casing };
+
+    core.addListener('mouseover', () => setSegHover(seg.id, true));
+    core.addListener('mouseout', () => setSegHover(seg.id, false));
+    core.addListener('click', () => {
+      focusSegmentCard(seg.id);
+      setSegFocus(seg.id);
+    });
+
+    childPolylines.push(core, casing);
+
+    // Endpoint nodes (smaller)
     if (path.length) {
       const startNode = new google.maps.Circle({
         center: path[0],
-        radius: 4,
+        radius: 2.5,
         map: googleMap,
         strokeColor: '#fff',
         strokeWeight: 1.5,
-        fillColor: color,
+        fillColor: segColor,
         fillOpacity: 1,
-        zIndex: 25,
+        zIndex: 5,
         clickable: false
       });
       const endNode = new google.maps.Circle({
         center: path[path.length - 1],
-        radius: 4,
+        radius: 2.5,
         map: googleMap,
         strokeColor: '#fff',
         strokeWeight: 1.5,
-        fillColor: color,
+        fillColor: segColor,
         fillOpacity: 1,
-        zIndex: 25,
+        zIndex: 5,
         clickable: false
       });
       childPolylines.push(startNode, endNode);
     }
+
+    // Numbered badge marker at midpoint
+    const mid = midpointGM(seg.coords);
+    const badge = new google.maps.Marker({
+      position: mid,
+      map: googleMap,
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 11,
+        fillColor: '#0e1320',
+        fillOpacity: 1,
+        strokeColor: '#ffffff',
+        strokeWeight: 1.5
+      },
+      label: { text: String(idx + 1), color: '#ffffff', fontSize: '11px', fontWeight: '700' },
+      zIndex: 50,
+      clickable: false
+    });
+    childPolylines.push(badge);
   });
+}
+
+function setSegHover(segId, on) {
+  const entry = segPolylines[segId];
+  if (!entry) return;
+  const { core, casing } = entry;
+
+  if (on) {
+    hoveredSegId = segId;
+    // White glow casing
+    casing.setOptions({ strokeColor: '#ffffff', strokeWeight: 15, zIndex: 40 });
+    casing.setMap(googleMap);
+    core.setOptions({ zIndex: 41 });
+  } else {
+    if (hoveredSegId === segId) hoveredSegId = null;
+    // Revert to focused or normal state
+    if (focusedSegId === segId) {
+      casing.setOptions({ strokeColor: '#fbbf24', strokeWeight: 14, zIndex: 20 });
+      casing.setMap(googleMap);
+      core.setOptions({ zIndex: 21 });
+    } else {
+      casing.setMap(null);
+      core.setOptions({ zIndex: 1 });
+    }
+  }
+
+  // Panel card
+  const card = document.getElementById(`seg-card-${segId}`);
+  if (card) {
+    card.classList.toggle('seg-hovered', on);
+  }
+}
+
+function setSegFocus(segId) {
+  // Remove focus from previous
+  if (focusedSegId !== null && focusedSegId !== segId) {
+    const prev = segPolylines[focusedSegId];
+    if (prev) {
+      prev.casing.setMap(null);
+      prev.core.setOptions({ zIndex: 1 });
+    }
+    const prevCard = document.getElementById(`seg-card-${focusedSegId}`);
+    if (prevCard) prevCard.classList.remove('seg-focused');
+  }
+
+  focusedSegId = segId;
+  const entry = segPolylines[segId];
+  if (entry) {
+    entry.casing.setOptions({ strokeColor: '#fbbf24', strokeWeight: 14, zIndex: 20 });
+    entry.casing.setMap(googleMap);
+    entry.core.setOptions({ zIndex: 21 });
+  }
+  const card = document.getElementById(`seg-card-${segId}`);
+  if (card) card.classList.add('seg-focused');
 }
 
 function clearChildPolylines() {
   childPolylines.forEach(p => p.setMap(null));
   childPolylines = [];
+  segPolylines = {};
+  hoveredSegId = null;
+  focusedSegId = null;
 }
 
 function fitMapToCorridors() {
@@ -747,7 +856,7 @@ function buildCorrBody(corr, segs) {
     // Standalone: no corridor name editor, just the single segment card
     return `
       <div class="seg-cards">
-        ${segs.map(seg => buildSegCard(seg)).join('')}
+        ${segs.map((seg, idx) => buildSegCard(seg, idx)).join('')}
       </div>
     `;
   }
@@ -759,18 +868,20 @@ function buildCorrBody(corr, segs) {
       ${sug ? `<button class="use-sug" title="${esc(sug)}">Use: ${esc(sug.length > 20 ? sug.slice(0,20) + '…' : sug)}</button>` : ''}
     </div>
     <div class="seg-cards">
-      ${segs.map(seg => buildSegCard(seg)).join('')}
+      ${segs.map((seg, idx) => buildSegCard(seg, idx)).join('')}
     </div>
   `;
 }
 
-function buildSegCard(seg) {
+function buildSegCard(seg, idx) {
   const named = seg.named;
   // Suggestion chips
   const chips = buildChips(seg);
+  const badgeNum = (typeof idx === 'number') ? idx + 1 : '';
+  const badgeHtml = badgeNum ? `<span class="seg-badge">${badgeNum}</span>` : '';
   return `
     <div class="seg-card" id="seg-card-${seg.id}">
-      <div class="seg-ref">${esc(seg.route_name_imported || '')}</div>
+      <div class="seg-ref">${badgeHtml}${esc(seg.route_name_imported || '')}</div>
       <input
         class="seg-name-input${named ? ' named' : ''}"
         id="seg-input-${seg.id}"
@@ -839,6 +950,10 @@ function wireSegCard(rowEl, seg, corrId) {
       saveSegName(sid, val);
     });
   });
+
+  // Map↔panel hover sync
+  card.addEventListener('mouseenter', () => setSegHover(seg.id, true));
+  card.addEventListener('mouseleave', () => setSegHover(seg.id, false));
 }
 
 // ── Flush pending debounced saves ─────────────────────────────────
