@@ -759,6 +759,9 @@ function focusSegmentCard(segId) {
   card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   card.classList.add('focused');
   setTimeout(() => card.classList.remove('focused'), 1200);
+  // Apply the persistent "selected" state (amber casing on map + seg-focused on card)
+  // so focusing from the panel / Next-unnamed matches focusing by clicking the map.
+  setSegFocus(segId);
 }
 
 // ── Panel rendering ────────────────────────────────────────────────
