@@ -44,3 +44,29 @@ def test_road_via_roads_offline_no_network(monkeypatch):
     monkeypatch.setattr(enrich, "_http", boom)
     cache = enrich.Cache(_mem(), offline=True)
     assert enrich.road_via_roads(91.88, 25.56, "KEY", cache) == ""
+
+import json, importer
+
+def _seed_project(conn):
+    pid = conn.execute("INSERT INTO projects(name,created_at) VALUES('t','now')").lastrowid
+    cid = conn.execute("INSERT INTO corridors(project_id,cor_code,order_index) VALUES(?,?,0)",
+                       (pid, "cor_001")).lastrowid
+    for k, uuid in enumerate(["A", "B"]):
+        conn.execute("""INSERT INTO segments(project_id,uuid,corridor_id,seq,geom,props)
+                        VALUES(?,?,?,?,?,?)""",
+                     (pid, uuid, cid, k, json.dumps([[91.88, 25.56], [91.89, 25.57]]), "{}"))
+    conn.commit(); return pid
+
+def test_run_fills_suggestions_and_corridor(monkeypatch, tmp_path):
+    path = str(tmp_path / "e.db"); conn = db.connect(path); db.init_db(conn)
+    pid = _seed_project(conn); conn.close()
+    monkeypatch.setattr(enrich, "road_geocode", lambda *a, **k: "G.S. Road")
+    monkeypatch.setattr(enrich, "road_via_roads", lambda *a, **k: "Jail Road")
+    res = enrich.run(pid, "KEY", path)
+    assert res["leaves"] == 2
+    conn = db.connect(path)
+    segs = conn.execute("SELECT sug_geocode,sug_roads FROM segments WHERE project_id=?", (pid,)).fetchall()
+    assert all(s["sug_geocode"] == "G.S. Road" and s["sug_roads"] == "Jail Road" for s in segs)
+    cor = conn.execute("SELECT suggested FROM corridors WHERE project_id=?", (pid,)).fetchone()
+    assert cor["suggested"] in ("G.S. Road", "Jail Road")
+    assert conn.execute("SELECT enriched FROM projects WHERE id=?", (pid,)).fetchone()[0] == 1
