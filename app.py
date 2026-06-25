@@ -49,23 +49,26 @@ async def create_project(file: UploadFile = File(...)):
     twins = importer.detect_twins(all_segs)
 
     c = conn()
-    pid = c.execute("INSERT INTO projects(name,created_at) VALUES(?,datetime('now'))",
-                    (file.filename or "project",)).lastrowid
+    try:
+        pid = c.execute("INSERT INTO projects(name,created_at) VALUES(?,datetime('now'))",
+                        (file.filename or "project",)).lastrowid
 
-    def ins_seg(s, corridor_id, seq):
-        c.execute("""INSERT INTO segments(project_id,uuid,corridor_id,seq,geom,props,
-                     route_name_imported,twin_uuid) VALUES(?,?,?,?,?,?,?,?)""",
-                  (pid, s["uuid"], corridor_id, seq, json.dumps(s["coords"]),
-                   json.dumps(s["props"]), s["route_name"], twins.get(s["uuid"])))
+        def ins_seg(s, corridor_id, seq):
+            c.execute("""INSERT INTO segments(project_id,uuid,corridor_id,seq,geom,props,
+                         route_name_imported,twin_uuid) VALUES(?,?,?,?,?,?,?,?)""",
+                      (pid, s["uuid"], corridor_id, seq, json.dumps(s["coords"]),
+                       json.dumps(s["props"]), s["route_name"], twins.get(s["uuid"])))
 
-    for i, cor in enumerate(work["corridors"]):
-        cid = c.execute("INSERT INTO corridors(project_id,cor_code,order_index) VALUES(?,?,?)",
-                        (pid, cor["cor_code"], i)).lastrowid
-        for k, s in enumerate(cor["segments"]):
-            ins_seg(s, cid, k)
-    for s in work["standalone"]:
-        ins_seg(s, None, 0)
-    c.commit(); c.close()
+        for i, cor in enumerate(work["corridors"]):
+            cid = c.execute("INSERT INTO corridors(project_id,cor_code,order_index) VALUES(?,?,?)",
+                            (pid, cor["cor_code"], i)).lastrowid
+            for k, s in enumerate(cor["segments"]):
+                ins_seg(s, cid, k)
+        for s in work["standalone"]:
+            ins_seg(s, None, 0)
+        c.commit()
+    finally:
+        c.close()
     return {"project_id": pid, "name": file.filename or "project",
             "leaves": len(all_segs), "corridors": len(work["corridors"])}
 
@@ -97,7 +100,7 @@ def get_project(pid: int):
     for r in c.execute("SELECT * FROM segments WHERE project_id=? ORDER BY corridor_id,seq", (pid,)):
         coords = json.loads(r["geom"])
         twin = r["twin_uuid"]
-        twin_name = name_by_uuid.get(twin) or None if twin else None
+        twin_name = (name_by_uuid.get(twin) or None) if twin else None
         segs.append({"id": r["id"], "uuid": r["uuid"], "corridor_id": r["corridor_id"],
                      "seq": r["seq"], "coords": coords, "mid": _point_at(coords, 0.5),
                      "route_name_imported": r["route_name_imported"], "name": r["name"],
@@ -128,7 +131,7 @@ def export_project(pid: int):
     if not p:
         raise HTTPException(404, "no such project")
     corrs = [dict(r) for r in c.execute("SELECT * FROM corridors WHERE project_id=?", (pid,))]
-    segs = [dict(r) for r in c.execute("SELECT * FROM segments WHERE project_id=?", (pid,))]
+    segs = [dict(r) for r in c.execute("SELECT * FROM segments WHERE project_id=? ORDER BY corridor_id, seq", (pid,))]
     c.close()
     payload = export.build_export(dict(p), corrs, segs)
     buf = io.BytesIO(json.dumps(payload, indent=2).encode())

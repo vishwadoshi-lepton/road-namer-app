@@ -1,4 +1,4 @@
-import math, re
+import re
 
 _HOUSE = re.compile(r'^\s*[A-Za-z0-9][A-Za-z0-9/\-]*\d[A-Za-z0-9/\-]*\s*,\s*')
 _REV = re.compile(r'\s*\((Reversed|Reverse)\)\s*', re.I)

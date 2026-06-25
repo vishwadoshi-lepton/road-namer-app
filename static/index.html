@@ -444,14 +444,6 @@ function corrSuggestion(corr) {
 }
 
 // ── Filter visibility ──────────────────────────────────────────────
-function corrMatchesFilter(corrId) {
-  if (activeFilter === 'all') return true;
-  const isNamed = corridorIsNamed(corrId);
-  if (activeFilter === 'named') return isNamed;
-  if (activeFilter === 'unnamed') return !isNamed;
-  return true;
-}
-
 function itemMatchesFilter(item) {
   if (activeFilter === 'all') return true;
   const segs = segmentsOfItem(item);
@@ -849,6 +841,16 @@ function wireSegCard(rowEl, seg, corrId) {
   });
 }
 
+// ── Flush pending debounced saves ─────────────────────────────────
+function flushPendingSaves() {
+  for (const [segId, timerId] of Object.entries(saveTimers)) {
+    clearTimeout(timerId);
+    const inp = document.getElementById(`seg-input-${segId}`);
+    if (inp) saveSegName(parseInt(segId, 10), inp.value);
+  }
+  saveTimers = {};
+}
+
 // ── Save ──────────────────────────────────────────────────────────
 async function saveSegName(segId, value) {
   const seg = projectData && projectData.segments.find(s => s.id === segId);
@@ -980,6 +982,8 @@ async function loadProjects() {
 }
 
 async function openProject(id) {
+  // Flush any pending debounced saves before switching projects
+  flushPendingSaves();
   currentProjectId = id;
   document.getElementById('btn-export').disabled = false;
 
@@ -1128,6 +1132,8 @@ async function boot() {
 
   // Wire up controls
   document.getElementById('btn-back').addEventListener('click', () => {
+    // Flush any pending debounced saves before tearing down project state
+    flushPendingSaves();
     // Return to home
     selectedCorrId = null;
     openCorrId = null;
