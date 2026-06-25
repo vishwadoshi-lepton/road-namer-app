@@ -159,7 +159,9 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
   display: none; align-items: center; justify-content: center;
   font-size: 14px; line-height: 1;
 }
-.input-wrap.has-value .clear-input { display: flex; }
+/* Show the × whenever the field is non-empty — works for typing, chips, and
+   "use suggestion" alike (the input shows its placeholder only when empty). */
+.input-wrap input:not(:placeholder-shown) + .clear-input { display: flex; }
 .clear-input:hover { background: #cbd5e1; color: #1e293b; }
 .seg-ref { font-size: 11px; color: #94a3b8; margin-bottom: 6px; display: flex; align-items: center; }
 .seg-badge { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: #0e1320; color: #fff; font-size: 11px; font-weight: 700; margin-right: 6px; flex-shrink: 0; vertical-align: middle; }
@@ -817,10 +819,6 @@ function renderCorrList() {
     if (!isStandalone) {
       const nameInput = row.querySelector('.corr-name-input');
       if (nameInput) {
-        nameInput.addEventListener('input', () => {
-          const wrap = nameInput.closest('.input-wrap');
-          if (wrap) wrap.classList.toggle('has-value', nameInput.value.length > 0);
-        });
         nameInput.addEventListener('change', () => saveCorrName(corr.id, nameInput.value));
         nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') { nameInput.blur(); } });
         const corrClear = row.querySelector('.corr-name-editor .clear-input');
@@ -828,8 +826,6 @@ function renderCorrList() {
           corrClear.addEventListener('mousedown', e => e.preventDefault());
           corrClear.addEventListener('click', () => {
             nameInput.value = '';
-            const wrap = nameInput.closest('.input-wrap');
-            if (wrap) wrap.classList.remove('has-value');
             saveCorrName(corr.id, '');
             nameInput.focus();
           });
@@ -869,7 +865,7 @@ function buildCorrBody(corr, segs) {
   const corrNameVal = corr.name || '';
   return `
     <div class="corr-name-editor">
-      <div class="input-wrap${corrNameVal ? ' has-value' : ''}" style="flex:1">
+      <div class="input-wrap" style="flex:1">
         <input class="corr-name-input" type="text" value="${esc(corrNameVal)}" placeholder="Corridor name…"/>
         <button class="clear-input" title="Clear" tabindex="-1">×</button>
       </div>
@@ -890,7 +886,7 @@ function buildSegCard(seg, idx) {
   return `
     <div class="seg-card${named ? ' named' : ''}" id="seg-card-${seg.id}">
       <div class="seg-ref">${badgeHtml}${esc(seg.route_name_imported || '')}</div>
-      <div class="input-wrap${seg.name ? ' has-value' : ''}">
+      <div class="input-wrap">
         <input
           class="seg-name-input${named ? ' named' : ''}"
           id="seg-input-${seg.id}"
@@ -932,8 +928,6 @@ function wireSegCard(rowEl, seg, corrId) {
   if (input) {
     // Debounced save on input
     input.addEventListener('input', () => {
-      const wrap = input.closest('.input-wrap');
-      if (wrap) wrap.classList.toggle('has-value', input.value.length > 0);
       clearTimeout(saveTimers[seg.id]);
       saveTimers[seg.id] = setTimeout(() => saveSegName(seg.id, input.value), 800);
     });
@@ -958,8 +952,6 @@ function wireSegCard(rowEl, seg, corrId) {
     clearBtn.addEventListener('mousedown', e => e.preventDefault()); // don't blur the input
     clearBtn.addEventListener('click', () => {
       input.value = '';
-      const wrap = input.closest('.input-wrap');
-      if (wrap) wrap.classList.remove('has-value');
       clearTimeout(saveTimers[seg.id]);
       saveSegName(seg.id, '');
       input.focus();
