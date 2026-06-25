@@ -580,29 +580,18 @@ function drawChildSegments(corrId) {
 
     childPolylines.push(core, casing);
 
-    // Endpoint nodes (smaller)
+    // Endpoint nodes (small, pixel-sized via Marker symbol — Circle.radius is in metres and vanishes at city zoom)
     if (path.length) {
-      const startNode = new google.maps.Circle({
-        center: path[0],
-        radius: 2.5,
-        map: googleMap,
-        strokeColor: '#fff',
-        strokeWeight: 1.5,
-        fillColor: segColor,
-        fillOpacity: 1,
-        zIndex: 5,
-        clickable: false
+      const nodeIcon = {
+        path: google.maps.SymbolPath.CIRCLE, scale: 3,
+        fillColor: segColor, fillOpacity: 1,
+        strokeColor: '#fff', strokeWeight: 1.5
+      };
+      const startNode = new google.maps.Marker({
+        position: path[0], map: googleMap, icon: nodeIcon, zIndex: 5, clickable: false
       });
-      const endNode = new google.maps.Circle({
-        center: path[path.length - 1],
-        radius: 2.5,
-        map: googleMap,
-        strokeColor: '#fff',
-        strokeWeight: 1.5,
-        fillColor: segColor,
-        fillOpacity: 1,
-        zIndex: 5,
-        clickable: false
+      const endNode = new google.maps.Marker({
+        position: path[path.length - 1], map: googleMap, icon: nodeIcon, zIndex: 5, clickable: false
       });
       childPolylines.push(startNode, endNode);
     }
