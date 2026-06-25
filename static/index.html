@@ -3,319 +3,1105 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Road Corridor Namer</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<title>Road Namer</title>
 <style>
-  :root{--bg:#0f1115;--panel:#171a21;--panel2:#1e222b;--line:#2a2f3a;--txt:#e7ebf2;--muted:#9aa4b2;
-        --accent:#3b82f6;--ok:#22c55e;--warn:#f59e0b;--rev:#a855f7;--danger:#ef4444;}
-  *{box-sizing:border-box}
-  html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--txt)}
-  #app{display:flex;flex-direction:column;height:100vh}
-  topbar,.topbar{display:flex;gap:10px;align-items:center;padding:9px 14px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
-  .topbar h1{font-size:14px;margin:0;font-weight:600;margin-right:6px}
-  select,input[type=text],input[type=password]{background:#0e1117;border:1px solid var(--line);color:var(--txt);padding:7px 9px;border-radius:7px;font-size:13px;outline:none}
-  input:focus,select:focus{border-color:var(--accent)}
-  button{font-family:inherit;font-size:13px;border:1px solid var(--line);border-radius:7px;padding:7px 11px;cursor:pointer;color:#fff;background:var(--panel2)}
-  button:hover{filter:brightness(1.15)} button.primary{background:var(--accent);border-color:var(--accent)} button:disabled{opacity:.45;cursor:not-allowed}
-  .grow{flex:1}
-  #main{flex:1;display:flex;min-height:0}
-  #map{flex:1;background:#0b0d11}
-  #side{width:400px;min-width:400px;border-left:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column}
-  .modebar{display:flex;border-bottom:1px solid var(--line)}
-  .modebar button{flex:1;border:none;border-radius:0;border-bottom:2px solid transparent;background:transparent;color:var(--muted);padding:11px}
-  .modebar button.on{color:var(--txt);border-bottom-color:var(--accent)}
-  .body{flex:1;overflow:auto;padding:14px}
-  .card{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:13px;margin-bottom:12px}
-  label{display:block;font-size:12px;color:var(--muted);margin:10px 0 5px}
-  .sug{font-size:12px;color:#9bbcff;background:#13233f;border:1px solid #294a6b;border-radius:7px;padding:7px 9px;margin-bottom:6px;cursor:pointer}
-  .sug.empty{color:var(--warn);background:#2a2310;cursor:default}
-  .row{display:flex;gap:8px;align-items:center}
-  .chip{flex:1;text-align:center;padding:8px;border:1px solid var(--line);border-radius:7px;font-size:12px;cursor:pointer;background:#0e1117}
-  .chip.on{border-color:var(--accent);background:#13233f;color:#bcd4ff}
-  .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;background:#23304a;color:#9bbcff;margin-right:6px}
-  .tag.rev{background:#33214a;color:#d6b4ff}
-  .small{font-size:11px;color:var(--muted)}
-  .hint{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5}
-  kbd{background:#0e1117;border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:10px}
-  .corr{border:1px solid var(--line);border-radius:9px;margin-bottom:9px;overflow:hidden}
-  .corr.active{border-color:var(--accent)}
-  .corr h4{margin:0;padding:9px 11px;font-size:13px;background:#0e1117;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px}
-  .corr h4 .cn{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .corr h4 .sw{width:11px;height:11px;border-radius:3px;flex:none}
-  .seglist{padding:4px}
-  .seg{display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:6px;font-size:12px;cursor:grab;border:1px solid transparent}
-  .seg:hover{background:#0e1117}
-  .seg.sel{background:#13233f;border-color:var(--accent)}
-  .seg .si{color:#6b7280;width:30px;flex:none}
-  .seg .sn{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .seg.dragover{border-color:var(--accent)}
-  .cbtns{display:flex;gap:6px;padding:6px 8px;flex-wrap:wrap}
-  .cbtns button{font-size:11px;padding:5px 8px}
-  .pill{font-size:11px;color:var(--muted)}
-  #prog{height:6px;background:var(--panel2);border-radius:6px;overflow:hidden;flex-basis:160px}
-  #prog>div{height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--ok));transition:width .2s}
-  .legendbox{position:absolute;left:12px;bottom:12px;z-index:600;background:rgba(20,24,31,.92);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:11px;color:var(--muted);max-width:260px}
-  .arrow-icon svg{filter:drop-shadow(0 0 2px #000)}
-  #empty{margin:auto;text-align:center;color:var(--muted);max-width:420px}
+/* ─── Reset & Base ─────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; font-size: 14px; color: #1a1a2e; background: #f0f2f5; }
+
+/* ─── Layout ────────────────────────────────────────────────────────── */
+#app { display: flex; flex-direction: column; height: 100vh; }
+
+/* Header */
+#header {
+  display: flex; align-items: center; gap: 12px; padding: 0 16px;
+  background: #fff; border-bottom: 1px solid #e2e8f0;
+  height: 52px; flex-shrink: 0; z-index: 10;
+}
+#header h1 { font-size: 16px; font-weight: 700; color: #1a1a2e; white-space: nowrap; }
+#header-progress { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+#progress-label { font-size: 12px; color: #64748b; white-space: nowrap; }
+#progress-bar-wrap { flex: 1; max-width: 200px; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; }
+#progress-bar { height: 100%; width: 0; background: #54c08a; border-radius: 3px; transition: width 0.3s; }
+#btn-next-unnamed {
+  padding: 6px 14px; background: #4f7bbf; color: #fff; border: none; border-radius: 6px;
+  font-size: 13px; cursor: pointer; white-space: nowrap; font-weight: 500;
+}
+#btn-next-unnamed:hover { background: #3d6aae; }
+#btn-export {
+  padding: 6px 14px; background: #fff; color: #4f7bbf; border: 1.5px solid #4f7bbf;
+  border-radius: 6px; font-size: 13px; cursor: pointer; white-space: nowrap; font-weight: 500;
+}
+#btn-export:hover { background: #eef3fb; }
+#btn-export:disabled { opacity: 0.4; cursor: default; }
+
+/* Body */
+#body { display: flex; flex: 1; min-height: 0; }
+
+/* Map */
+#map-container { flex: 62; position: relative; }
+#map { width: 100%; height: 100%; }
+#map-no-key {
+  display: none; position: absolute; inset: 0; background: #e8ecf0;
+  align-items: center; justify-content: center; text-align: center; color: #64748b; font-size: 15px;
+}
+
+/* Panel */
+#panel { flex: 38; min-width: 320px; max-width: 480px; background: #fff; border-left: 1px solid #e2e8f0; display: flex; flex-direction: column; overflow: hidden; }
+
+/* Home / Landing */
+#home { flex: 1; overflow-y: auto; padding: 24px; }
+#home h2 { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+#home .subtitle { color: #64748b; font-size: 13px; margin-bottom: 20px; }
+#import-area {
+  border: 2px dashed #cbd5e1; border-radius: 10px; padding: 20px; text-align: center;
+  cursor: pointer; margin-bottom: 24px; background: #f8fafc; transition: border-color 0.2s;
+}
+#import-area:hover { border-color: #4f7bbf; }
+#import-area p { color: #64748b; font-size: 13px; margin-top: 6px; }
+#file-input { display: none; }
+#import-btn-label {
+  display: inline-block; padding: 8px 20px; background: #4f7bbf; color: #fff;
+  border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer;
+}
+#import-status { margin-top: 8px; font-size: 12px; color: #64748b; }
+.project-list { display: flex; flex-direction: column; gap: 8px; }
+.project-item {
+  display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+  border: 1px solid #e2e8f0; border-radius: 8px; cursor: pointer; background: #f8fafc;
+  transition: border-color 0.15s;
+}
+.project-item:hover { border-color: #4f7bbf; background: #eef3fb; }
+.project-item .proj-name { font-weight: 600; font-size: 14px; }
+.project-item .proj-meta { font-size: 12px; color: #64748b; margin-top: 2px; }
+.project-item .proj-del {
+  margin-left: auto; background: none; border: none; cursor: pointer;
+  color: #94a3b8; font-size: 16px; line-height: 1; padding: 4px;
+}
+.project-item .proj-del:hover { color: #ef4444; }
+#home-loading { color: #64748b; font-size: 13px; }
+
+/* Project view */
+#project-view { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+
+/* Filter chips */
+#filter-bar { display: flex; gap: 6px; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; flex-shrink: 0; }
+.filter-chip {
+  padding: 4px 12px; border-radius: 20px; border: 1.5px solid #e2e8f0;
+  font-size: 12px; cursor: pointer; background: #f8fafc; color: #64748b;
+  transition: all 0.15s; font-weight: 500;
+}
+.filter-chip.active { background: #4f7bbf; border-color: #4f7bbf; color: #fff; }
+.filter-chip:hover:not(.active) { border-color: #4f7bbf; color: #4f7bbf; }
+
+/* Back button strip */
+#back-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #e2e8f0; flex-shrink: 0; }
+#btn-back { background: none; border: none; cursor: pointer; color: #4f7bbf; font-size: 13px; font-weight: 500; padding: 0; }
+#btn-back:hover { text-decoration: underline; }
+#project-name-label { font-size: 13px; font-weight: 600; color: #1a1a2e; }
+
+/* Corridor list */
+#corridor-list { flex: 1; overflow-y: auto; padding: 6px 8px 12px; }
+
+/* Corridor row */
+.corr-row {
+  border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 6px; overflow: hidden;
+  transition: border-color 0.15s;
+}
+.corr-row.selected { border-color: #4f8cff; }
+.corr-header {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  cursor: pointer; background: #f8fafc; user-select: none;
+}
+.corr-row.selected .corr-header { background: #eef3fb; }
+.corr-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.corr-info { flex: 1; min-width: 0; }
+.corr-code { font-weight: 600; font-size: 13px; color: #1a1a2e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.corr-meta { font-size: 11px; color: #64748b; margin-top: 2px; }
+.corr-chevron { color: #94a3b8; font-size: 12px; transition: transform 0.2s; }
+.corr-row.open .corr-chevron { transform: rotate(90deg); }
+
+/* Segment cards container */
+.corr-body { display: none; border-top: 1px solid #e2e8f0; background: #fff; }
+.corr-row.open .corr-body { display: block; }
+
+/* Corridor name editor */
+.corr-name-editor { padding: 10px 12px; background: #f8fafc; border-bottom: 1px solid #f0f2f5; display: flex; gap: 6px; align-items: center; }
+.corr-name-editor input {
+  flex: 1; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 8px;
+  font-size: 13px; color: #1a1a2e; outline: none; background: #fff;
+}
+.corr-name-editor input:focus { border-color: #4f7bbf; }
+.corr-name-editor .use-sug {
+  padding: 5px 9px; background: #f0f7ff; border: 1px solid #bcd4ff;
+  border-radius: 6px; font-size: 11px; color: #3b5ea8; cursor: pointer; white-space: nowrap;
+}
+.corr-name-editor .use-sug:hover { background: #dbeafe; }
+
+/* Segment cards */
+.seg-cards { padding: 6px 8px; }
+.seg-card {
+  border: 1px solid #e2e8f0; border-radius: 7px; padding: 10px 11px;
+  margin-bottom: 6px; background: #fff; transition: border-color 0.15s;
+}
+.seg-card:last-child { margin-bottom: 0; }
+.seg-card.focused { border-color: #4f8cff; box-shadow: 0 0 0 2px #c7d9ff; }
+.seg-ref { font-size: 11px; color: #94a3b8; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.seg-name-input {
+  width: 100%; border: 1px solid #e2e8f0; border-radius: 6px; padding: 7px 9px;
+  font-size: 13px; color: #1a1a2e; outline: none; background: #fff; margin-bottom: 7px;
+}
+.seg-name-input:focus { border-color: #4f7bbf; box-shadow: 0 0 0 2px #dbeafe; }
+.seg-name-input.named { border-color: #54c08a; background: #f0fdf4; }
+.seg-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.chip-sug {
+  padding: 3px 10px; border-radius: 20px; border: 1.5px solid #bcd4ff;
+  background: #eef3fb; color: #3b5ea8; font-size: 11px; cursor: pointer; font-weight: 500;
+}
+.chip-sug:hover { background: #dbeafe; border-color: #4f7bbf; }
+.chip-twin {
+  padding: 3px 10px; border-radius: 20px; border: 1.5px solid #d4c5f9;
+  background: #f5f3ff; color: #6d3fbf; font-size: 11px; cursor: pointer; font-weight: 500;
+}
+.chip-twin:hover { background: #ede9fe; }
+
+/* Tooltip */
+#map-tooltip {
+  position: fixed; pointer-events: none; z-index: 9999;
+  background: rgba(26,26,46,0.92); color: #fff; border-radius: 6px;
+  padding: 5px 10px; font-size: 12px; display: none; white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+/* Saving indicator */
+#save-indicator {
+  position: fixed; bottom: 16px; right: 16px; z-index: 9999;
+  background: #54c08a; color: #fff; border-radius: 20px;
+  padding: 6px 16px; font-size: 12px; font-weight: 500;
+  opacity: 0; transition: opacity 0.3s; pointer-events: none;
+}
+#save-indicator.visible { opacity: 1; }
+
+/* No-key overlay */
+.no-maps-msg {
+  background: #fff8e1; border: 1px solid #f59e0b; border-radius: 8px;
+  padding: 16px; color: #92400e; font-size: 13px; margin: 20px;
+}
+
+/* Misc */
+.empty-state { padding: 32px 16px; text-align: center; color: #94a3b8; font-size: 13px; }
+.loading { padding: 16px; text-align: center; color: #94a3b8; font-size: 13px; }
 </style>
 </head>
 <body>
 <div id="app">
-  <div class="topbar">
-    <h1>Road Corridor Namer</h1>
-    <select id="proj"></select>
-    <button id="newbtn">+ Import GeoJSON</button>
-    <input id="file" type="file" accept=".geojson,.json" style="display:none"/>
-    <span class="grow"></span>
-    <input id="gkey" type="password" placeholder="Google API key" style="width:150px"/>
-    <label class="small" style="margin:0;display:flex;align-items:center;gap:5px"><input type="checkbox" id="offline"/> offline (cache only)</label>
-    <select id="mode-sel"><option value="geocode">geocode (cheap)</option><option value="roads">roads (accurate)</option></select>
-    <button id="enrich" class="primary">✨ Auto-name</button>
-    <div id="prog"><div></div></div>
-    <span id="progtxt" class="small"></span>
-    <button id="export">⬇ Export</button>
+  <!-- Header -->
+  <div id="header">
+    <h1>Road Namer</h1>
+    <div id="header-progress" style="display:none">
+      <span id="progress-label">Named 0 / 0</span>
+      <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+    </div>
+    <div style="flex:1"></div>
+    <button id="btn-next-unnamed" style="display:none">Next unnamed →</button>
+    <button id="btn-export" disabled>Export</button>
   </div>
-  <div id="main">
-    <div id="map"><div class="legendbox" id="legend"></div></div>
-    <div id="side">
-      <div class="modebar">
-        <button id="m-names" class="on">✍ Names</button>
-        <button id="m-corr">🛣 Corridors</button>
+
+  <!-- Body -->
+  <div id="body">
+    <!-- Map -->
+    <div id="map-container">
+      <div id="map"></div>
+      <div id="map-no-key"><div class="no-maps-msg">No Google Maps API key configured.<br>Set <code>GOOGLE_MAPS_JS_KEY</code> in your environment and restart the server.</div></div>
+    </div>
+
+    <!-- Panel -->
+    <div id="panel">
+      <!-- Home view -->
+      <div id="home">
+        <h2>Road Namer</h2>
+        <p class="subtitle">Import a GeoJSON file to start naming road segments.</p>
+
+        <div id="import-area" onclick="document.getElementById('file-input').click()">
+          <label id="import-btn-label">+ Import GeoJSON</label>
+          <p>Click to choose a .geojson file, or drag and drop</p>
+          <div id="import-status"></div>
+        </div>
+        <input type="file" id="file-input" accept=".geojson,.json"/>
+
+        <div id="home-loading">Loading projects…</div>
+        <div class="project-list" id="project-list"></div>
       </div>
-      <div class="body" id="sidebody">
-        <div id="empty">Pick a project above, or <b>Import GeoJSON</b> to start.<br><br>
-          Auto-name fills a first-layer suggestion (segment = POI→POI, corridor = road: POI→POI) you can accept or override. Edit corridors by clicking segments on the map or dragging them between lists.</div>
+
+      <!-- Project view -->
+      <div id="project-view" style="display:none">
+        <div id="back-bar">
+          <button id="btn-back">← Projects</button>
+          <span id="project-name-label"></span>
+        </div>
+        <div id="filter-bar">
+          <div class="filter-chip active" data-filter="all">All <span id="count-all">0</span></div>
+          <div class="filter-chip" data-filter="unnamed">Unnamed <span id="count-unnamed">0</span></div>
+          <div class="filter-chip" data-filter="named">Named <span id="count-named">0</span></div>
+        </div>
+        <div id="corridor-list"></div>
       </div>
     </div>
   </div>
 </div>
+
+<div id="map-tooltip"></div>
+<div id="save-indicator">Saved ✓</div>
+
 <script>
-const $=s=>document.querySelector(s);
-const API="";
-let DATA=null, PID=null, mode="names", curSeg=null, activeCorr=null, map, layer, arrowLayer, lastFit=null;
-const C_CUR="#3b82f6", C_MEMBER="#6b7280", C_CTX="#3a414d", C_REV="#a855f7";
+/* ═══════════════════════════════════════════════════════════════════
+   ROAD NAMER — single-file vanilla JS + Google Maps
+   ═══════════════════════════════════════════════════════════════════ */
 
-/* ---------- geometry ---------- */
-function bearing(a,b){const y=Math.sin((b[0]-a[0])*Math.PI/180)*Math.cos(b[1]*Math.PI/180);
-  const x=Math.cos(a[1]*Math.PI/180)*Math.sin(b[1]*Math.PI/180)-Math.sin(a[1]*Math.PI/180)*Math.cos(b[1]*Math.PI/180)*Math.cos((b[0]-a[0])*Math.PI/180);
-  return (Math.atan2(y,x)*180/Math.PI+360)%360;}
-function ll(c){return c.map(p=>[p[1],p[0]]);}
-function oriented(s){return s.reversed?s.coords.slice().reverse():s.coords.slice();}
+// ── State ──────────────────────────────────────────────────────────
+let googleMap = null;
+let projectData = null;          // full project response {project, corridors, segments}
+let currentProjectId = null;
+let activeFilter = 'all';        // 'all' | 'unnamed' | 'named'
+let openCorrId = null;           // accordion: currently open corridor id (null = none)
+let selectedCorrId = null;       // map-selected corridor/standalone id
+let childPolylines = [];         // child segment polylines when a corridor is selected
+let corridorPolylines = {};      // corrId -> google.maps.Polyline (top-level)
+let saveTimers = {};             // segId -> debounce timer
+let mapsLoaded = false;
 
-/* ---------- API ---------- */
-async function api(path,opts){
-  const r=await fetch(API+path,opts);
-  if(!r.ok){ let m=await r.text(); try{m=JSON.parse(m).detail||m;}catch(e){} throw new Error(`${r.status}: ${m}`); }
-  return (r.headers.get("content-type")||"").includes("json")?r.json():r;
-}
-async function jpost(path,body){return api(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})});}
-async function jpatch(path,body){return api(path,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})});}
-
-/* ---------- projects ---------- */
-async function loadProjects(sel){
-  let ps;
-  try{ ps=await api("/api/projects"); }
-  catch(e){ $("#empty").innerHTML="<b>Can't reach the server.</b><br>Run <code>python app.py</code> and open <b>http://localhost:8000</b> (don't open index.html directly)."; return; }
-  $("#proj").innerHTML='<option value="">— select project —</option>'+ps.map(p=>`<option value="${p.id}">#${p.id} ${p.name} (${p.seg_count} segs)</option>`).join("");
-  if(sel){$("#proj").value=sel; openProject(sel);}
-}
-async function openProject(pid){
-  PID=pid; DATA=await api("/api/projects/"+pid);
-  activeCorr=DATA.corridors[0]?DATA.corridors[0].id:null;
-  curSeg=DATA.segments[0]?DATA.segments[0].id:null;
-  lastFit=null; renderMap(); renderSide();
-  if(DATA.progress&&DATA.progress.running) pollProgress();
+// ── Helpers ────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-/* ---------- map ---------- */
-function initMap(){map=L.map("map").setView([22.99,72.54],12);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(map);
-  layer=L.layerGroup().addTo(map); arrowLayer=L.layerGroup().addTo(map);}
-function corrOf(id){return DATA.corridors.find(c=>c.id===id);}
-function segsOfCorr(cid){return DATA.segments.filter(s=>s.corridor_id===cid).sort((a,b)=>a.seq-b.seq);}
-function curSegObj(){ return DATA.segments.find(s=>s.id===curSeg); }
-function focusCorr(){ if(mode==="names"){ const s=curSegObj(); return s?s.corridor_id:activeCorr; } return activeCorr; }
-function fitTo(cid,pad){
-  if(lastFit===cid+"|"+mode) return;        // only refit when the focused corridor changes (no jitter)
-  const pts=[]; DATA.segments.filter(s=>s.corridor_id===cid).forEach(s=>s.coords.forEach(c=>pts.push([c[1],c[0]])));
-  if(pts.length){ map.fitBounds(L.latLngBounds(pts).pad(pad)); lastFit=cid+"|"+mode; }
+function lngLatToGM(coords) {
+  // coords = [[lng, lat], ...] → [{lat, lng}, ...]
+  return coords.map(([lng, lat]) => ({ lat, lng }));
 }
-function addArrows(s){
-  const co=oriented(s);
-  for(let i=1;i<co.length;i+=Math.max(1,Math.floor(co.length/3))){
-    const b=bearing(co[i-1],co[i]);
-    arrowLayer.addLayer(L.marker([co[i][1],co[i][0]],{interactive:false,icon:L.divIcon({className:"arrow-icon",iconSize:[16,16],iconAnchor:[8,8],
-      html:`<svg width="16" height="16" viewBox="0 0 16 16" style="transform:rotate(${b}deg)"><path d="M8 1 L13 14 L8 10 L3 14 Z" fill="#fff"/></svg>`})}));
+
+function midpointGM(coords) {
+  // Return the middle point of a coords array (lng,lat order) as {lat,lng}
+  const mid = Math.floor(coords.length / 2);
+  return { lat: coords[mid][1], lng: coords[mid][0] };
+}
+
+function showSaveIndicator() {
+  const el = document.getElementById('save-indicator');
+  el.classList.add('visible');
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => el.classList.remove('visible'), 1800);
+}
+
+// ── API ────────────────────────────────────────────────────────────
+async function apiFetch(path, opts = {}) {
+  const r = await fetch(path, opts);
+  if (!r.ok) {
+    let msg;
+    try { msg = (await r.json()).detail || r.statusText; } catch(e) { msg = r.statusText; }
+    throw new Error(msg);
+  }
+  const ct = r.headers.get('content-type') || '';
+  return ct.includes('json') ? r.json() : r;
+}
+
+async function apiPatch(path, body) {
+  return apiFetch(path, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+}
+
+// ── Progress helpers ───────────────────────────────────────────────
+function calcProgress() {
+  if (!projectData) return { named: 0, total: 0 };
+  const segs = projectData.segments;
+  const named = segs.filter(s => s.named).length;
+  return { named, total: segs.length };
+}
+
+function updateProgressUI() {
+  const { named, total } = calcProgress();
+  document.getElementById('progress-label').textContent = `Named ${named} / ${total}`;
+  document.getElementById('progress-bar').style.width = total ? `${Math.round(named / total * 100)}%` : '0%';
+  updateFilterCounts();
+}
+
+function updateFilterCounts() {
+  if (!projectData) return;
+  const segs = projectData.segments;
+  const all = segs.length;
+  const named = segs.filter(s => s.named).length;
+  const unnamed = all - named;
+
+  // Count by corridor visibility
+  // Filter counts: for "all" corridors/standalones
+  const visibleCorrs = getVisibleCorridors();
+  let countAll = 0, countNamed = 0, countUnnamed = 0;
+  visibleCorrs.forEach(item => {
+    const segsOfItem = projectData.segments.filter(s => s.corridor_id === item.id);
+    countAll++;
+    const allNamed = segsOfItem.every(s => s.named);
+    const anyNamed = segsOfItem.some(s => s.named);
+    if (allNamed) countNamed++;
+    else countUnnamed++;
+  });
+
+  document.getElementById('count-all').textContent = countAll;
+  document.getElementById('count-named').textContent = countNamed;
+  document.getElementById('count-unnamed').textContent = countUnnamed;
+}
+
+// ── Data helpers ───────────────────────────────────────────────────
+function getVisibleCorridors() {
+  if (!projectData) return [];
+  // Corridors in order, then standalone segments (corridor_id pointing to a standalone-only corridor)
+  return projectData.corridors;
+}
+
+function segmentsOfCorridor(corrId) {
+  if (!projectData) return [];
+  return projectData.segments
+    .filter(s => s.corridor_id === corrId)
+    .sort((a, b) => a.seq - b.seq);
+}
+
+function corridorIsNamed(corrId) {
+  const segs = segmentsOfCorridor(corrId);
+  return segs.length > 0 && segs.every(s => s.named);
+}
+
+function corridorUnnamedCount(corrId) {
+  return segmentsOfCorridor(corrId).filter(s => !s.named).length;
+}
+
+function getCorrObj(corrId) {
+  return projectData && projectData.corridors.find(c => c.id === corrId);
+}
+
+function joinCorrCoords(corrId) {
+  // Join segments head-to-tail into one polyline path
+  const segs = segmentsOfCorridor(corrId);
+  if (!segs.length) return [];
+  const pts = [];
+  segs.forEach(s => s.coords.forEach(c => pts.push({ lat: c[1], lng: c[0] })));
+  return pts;
+}
+
+function corrDisplayName(corr) {
+  return corr.name || corr.suggested || corr.cor_code || `Corridor ${corr.id}`;
+}
+
+function corrSuggestion(corr) {
+  if (corr.suggested) return corr.suggested;
+  // Fall back to most common child name
+  const names = segmentsOfCorridor(corr.id).map(s => s.name).filter(Boolean);
+  if (!names.length) return null;
+  const freq = {};
+  names.forEach(n => freq[n] = (freq[n] || 0) + 1);
+  return Object.entries(freq).sort((a,b) => b[1]-a[1])[0][0];
+}
+
+// ── Filter visibility ──────────────────────────────────────────────
+function corrMatchesFilter(corrId) {
+  if (activeFilter === 'all') return true;
+  const isNamed = corridorIsNamed(corrId);
+  if (activeFilter === 'named') return isNamed;
+  if (activeFilter === 'unnamed') return !isNamed;
+  return true;
+}
+
+// ── Colors ────────────────────────────────────────────────────────
+const COLOR_UNNAMED  = '#4f7bbf';
+const COLOR_NAMED    = '#54c08a';
+const COLOR_SELECTED = '#4f8cff';
+const COLOR_FADED    = '#b0c4de';
+
+function corrColor(corrId) {
+  if (corrId === selectedCorrId) return COLOR_SELECTED;
+  const named = corridorIsNamed(corrId);
+  return named ? COLOR_NAMED : COLOR_UNNAMED;
+}
+
+// ── Map rendering ──────────────────────────────────────────────────
+function renderMap() {
+  if (!googleMap || !projectData) return;
+  clearChildPolylines();
+
+  // Remove old top-level polylines
+  Object.values(corridorPolylines).forEach(pl => pl.setMap(null));
+  corridorPolylines = {};
+
+  projectData.corridors.forEach(corr => {
+    const path = joinCorrCoords(corr.id);
+    if (!path.length) return;
+
+    const isSelected = corr.id === selectedCorrId;
+    const color = corrColor(corr.id);
+    const weight = isSelected ? 6 : 4;
+    const opacity = (selectedCorrId && !isSelected) ? 0.3 : 1;
+
+    const pl = new google.maps.Polyline({
+      path,
+      map: googleMap,
+      strokeColor: color,
+      strokeWeight: weight,
+      strokeOpacity: opacity,
+      zIndex: isSelected ? 10 : 1
+    });
+
+    corridorPolylines[corr.id] = pl;
+
+    // Click
+    pl.addListener('click', () => selectCorridor(corr.id, 'map'));
+
+    // Hover tooltip
+    pl.addListener('mouseover', (e) => {
+      const corObj = getCorrObj(corr.id);
+      const segs = segmentsOfCorridor(corr.id);
+      const unnamedCount = corridorUnnamedCount(corr.id);
+      const label = corrDisplayName(corObj);
+      const tooltip = document.getElementById('map-tooltip');
+      tooltip.textContent = `${label} · ${segs.length} segs · ${unnamedCount} unnamed`;
+      tooltip.style.display = 'block';
+    });
+    pl.addListener('mousemove', (e) => {
+      const tooltip = document.getElementById('map-tooltip');
+      const mouseEvent = e.domEvent || (e.xa && e);
+      if (mouseEvent && mouseEvent.clientX !== undefined) {
+        tooltip.style.left = (mouseEvent.clientX + 14) + 'px';
+        tooltip.style.top  = (mouseEvent.clientY - 10) + 'px';
+      }
+    });
+    pl.addListener('mouseout', () => {
+      document.getElementById('map-tooltip').style.display = 'none';
+    });
+  });
+
+  // Draw child segments for selected corridor
+  if (selectedCorrId) {
+    drawChildSegments(selectedCorrId);
   }
 }
-function renderMap(){
-  if(!DATA) return;
-  layer.clearLayers(); arrowLayer.clearLayers();
-  const fc=focusCorr();
-  DATA.segments.forEach(s=>{
-    const inFocus = s.corridor_id===fc;
-    if(mode==="names"){
-      if(!inFocus) return;                                   // NAMES: show only the current corridor
-      const isCur = s.id===curSeg;
-      const pl=L.polyline(ll(s.coords),{color:isCur?(s.reversed?C_REV:C_CUR):C_MEMBER,weight:isCur?7:4,opacity:isCur?1:.9}).addTo(layer);
-      pl.on("click",()=>onSegClick(s));
-      if(isCur) addArrows(s);
-    } else {
-      // CORRIDORS: active corridor bold; everything else faint context (still clickable to add)
-      const pl=L.polyline(ll(s.coords),{color:inFocus?C_CUR:C_CTX,weight:inFocus?6:2,opacity:inFocus?1:.45}).addTo(layer);
-      pl.on("click",()=>onSegClick(s));
-      if(inFocus && s.id===curSeg) addArrows(s);
+
+function drawChildSegments(corrId) {
+  clearChildPolylines();
+  const segs = segmentsOfCorridor(corrId);
+  const shades = ['#2563eb', '#1d4ed8', '#3b82f6', '#60a5fa'];
+
+  segs.forEach((seg, idx) => {
+    const path = lngLatToGM(seg.coords);
+    if (!path.length) return;
+    const color = shades[idx % shades.length];
+
+    const pl = new google.maps.Polyline({
+      path,
+      map: googleMap,
+      strokeColor: color,
+      strokeWeight: 4,
+      strokeOpacity: 0.9,
+      zIndex: 20
+    });
+
+    pl.addListener('click', () => focusSegmentCard(seg.id));
+    childPolylines.push(pl);
+
+    // Endpoint nodes
+    if (path.length) {
+      const startNode = new google.maps.Circle({
+        center: path[0],
+        radius: 4,
+        map: googleMap,
+        strokeColor: '#fff',
+        strokeWeight: 1.5,
+        fillColor: color,
+        fillOpacity: 1,
+        zIndex: 25,
+        clickable: false
+      });
+      const endNode = new google.maps.Circle({
+        center: path[path.length - 1],
+        radius: 4,
+        map: googleMap,
+        strokeColor: '#fff',
+        strokeWeight: 1.5,
+        fillColor: color,
+        fillOpacity: 1,
+        zIndex: 25,
+        clickable: false
+      });
+      childPolylines.push(startNode, endNode);
     }
   });
-  fitTo(fc, mode==="names"?0.35:0.6);
-  $("#legend").innerHTML = mode==="corr"
-    ? `Showing <b style="color:#9bbcff">active corridor</b> bold; other segments are faint. Click a faint one to <b>add</b> it; click a member to <b>pop it out</b>.`
-    : `Showing only the <b>current corridor</b>. The bold blue segment is selected — use Prev/Next to move along it.`;
 }
 
-function onSegClick(s){
-  if(mode==="names"){curSeg=s.id;renderMap();renderSide();}
-  else{ // corridor membership toggle
-    if(s.corridor_id===activeCorr){ moveSeg(s.id,"new"); }
-    else { moveSeg(s.id,activeCorr); }
+function clearChildPolylines() {
+  childPolylines.forEach(p => p.setMap(null));
+  childPolylines = [];
+}
+
+function fitMapToCorridors() {
+  if (!googleMap || !projectData) return;
+  const bounds = new google.maps.LatLngBounds();
+  let hasPoints = false;
+  projectData.segments.forEach(seg => {
+    seg.coords.forEach(([lng, lat]) => {
+      bounds.extend({ lat, lng });
+      hasPoints = true;
+    });
+  });
+  if (hasPoints) googleMap.fitBounds(bounds);
+}
+
+function fitMapToCorridor(corrId) {
+  if (!googleMap) return;
+  const segs = segmentsOfCorridor(corrId);
+  if (!segs.length) return;
+  const bounds = new google.maps.LatLngBounds();
+  segs.forEach(seg => seg.coords.forEach(([lng, lat]) => bounds.extend({ lat, lng })));
+  googleMap.fitBounds(bounds, { top: 50, right: 50, bottom: 50, left: 50 });
+}
+
+// ── Map click on empty space ───────────────────────────────────────
+function initMapClickDeselect() {
+  if (!googleMap) return;
+  googleMap.addListener('click', () => {
+    deselectCorridor();
+  });
+}
+
+// ── Tooltip mousemove on document ──────────────────────────────────
+document.addEventListener('mousemove', e => {
+  const tooltip = document.getElementById('map-tooltip');
+  if (tooltip.style.display === 'block') {
+    tooltip.style.left = (e.clientX + 14) + 'px';
+    tooltip.style.top  = (e.clientY - 10) + 'px';
+  }
+});
+
+// ── Selection ──────────────────────────────────────────────────────
+function selectCorridor(corrId, source) {
+  selectedCorrId = corrId;
+
+  // Map: re-render with selection
+  renderMap();
+
+  // Pan to corridor
+  if (source === 'panel') {
+    fitMapToCorridor(corrId);
+  }
+
+  // Panel: open accordion
+  openAccordion(corrId, source !== 'panel');
+}
+
+function deselectCorridor() {
+  selectedCorrId = null;
+  openCorrId = null;
+  renderMap();
+  renderCorrList();
+}
+
+function openAccordion(corrId, scrollToRow) {
+  openCorrId = corrId;
+  renderCorrList();
+  if (scrollToRow) {
+    setTimeout(() => {
+      const row = document.getElementById(`corr-row-${corrId}`);
+      if (row) row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 50);
   }
 }
 
-/* ---------- sidebar ---------- */
-function renderSide(){ mode==="names"?renderNames():renderCorr(); }
-
-function renderNames(){
-  const b=$("#sidebody");
-  if(!DATA.segments.length){b.innerHTML="No segments.";return;}
-  if(curSeg==null) curSeg=DATA.segments[0].id;
-  const s=DATA.segments.find(x=>x.id===curSeg); const cor=corrOf(s.corridor_id);
-  const idx=DATA.segments.findIndex(x=>x.id===curSeg);
-  b.innerHTML=`
-   <div class="card">
-     <div><span class="tag">Corridor #${cor.order_index+1}</span>
-       ${s.reversed?'<span class="tag rev">reverse</span>':''}<span class="small">seg ${idx+1}/${DATA.segments.length}</span></div>
-     <label>Segment name <span class="small">(POI → POI)</span></label>
-     <div class="sug ${s.suggested?'':'empty'}" id="seg-sug" title="click to accept">${s.suggested?('💡 '+esc(s.suggested)):'no Google suggestion yet'}</div>
-     <input id="seg-name" type="text" value="${esc(s.name)}" placeholder="type a name or accept the suggestion"/>
-     <label>Carriageway</label>
-     <div class="row" id="div">
-       ${['','divided','undivided'].map(v=>`<div class="chip ${s.divided===v?'on':''}" data-v="${v}">${v||'unset'}</div>`).join('')}
-     </div>
-     <div class="row" style="margin-top:10px">
-       <button id="prev">◀ Prev</button><button id="next" class="grow">Next ▶</button>
-     </div>
-     <div class="hint"><kbd>Enter</kbd> save & next · click 💡 to accept suggestion · changes save automatically</div>
-   </div>
-   <div class="card">
-     <label>Corridor name <span class="small">(road: firstPOI → lastPOI)</span></label>
-     <div class="sug ${cor.suggested?'':'empty'}" id="corr-sug" title="click to accept">${cor.suggested?('💡 '+esc(cor.suggested)):'no suggestion yet'}</div>
-     <input id="corr-name" type="text" value="${esc(cor.name)}" placeholder="corridor name"/>
-   </div>`;
-  $("#seg-sug").onclick=()=>{ if(s.suggested){$("#seg-name").value=s.suggested; saveSeg(s.id,{name:s.suggested}); }};
-  $("#seg-name").onchange=e=>saveSeg(s.id,{name:e.target.value});
-  $("#seg-name").onkeydown=e=>{if(e.key==="Enter"){saveSeg(s.id,{name:e.target.value}); goSeg(1);}};
-  $("#div").querySelectorAll(".chip").forEach(ch=>ch.onclick=()=>{saveSeg(s.id,{divided:ch.dataset.v});});
-  $("#corr-sug").onclick=()=>{ if(cor.suggested){$("#corr-name").value=cor.suggested; saveCorr(cor.id,{name:cor.suggested}); }};
-  $("#corr-name").onchange=e=>saveCorr(cor.id,{name:e.target.value});
-  $("#prev").onclick=()=>goSeg(-1); $("#next").onclick=()=>goSeg(1);
-  setTimeout(()=>{const n=$("#seg-name");if(n){n.focus();n.setSelectionRange(n.value.length,n.value.length);}},0);
+function focusSegmentCard(segId) {
+  // Scroll the segment card into view and briefly highlight
+  const card = document.getElementById(`seg-card-${segId}`);
+  if (!card) return;
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  card.classList.add('focused');
+  setTimeout(() => card.classList.remove('focused'), 1200);
 }
-function goSeg(d){const i=DATA.segments.findIndex(x=>x.id===curSeg);const j=Math.min(DATA.segments.length-1,Math.max(0,i+d));curSeg=DATA.segments[j].id;renderMap();renderNames();}
 
-function renderCorr(){
-  const b=$("#sidebody");
-  b.innerHTML=`<div class="small" style="margin-bottom:8px">Active corridor is editable on the map. Drag segments between corridors. Use Split/Merge to restructure.</div>
-    <div id="corrlist"></div>`;
-  const list=$("#corrlist");
-  DATA.corridors.forEach(cor=>{
-    const segs=segsOfCorr(cor.id); const col=cor.id===activeCorr?C_CUR:"#3a414d";
-    const div=document.createElement("div"); div.className="corr"+(cor.id===activeCorr?" active":"");
-    div.innerHTML=`<h4 data-cid="${cor.id}"><span class="sw" style="background:${col}"></span>
-        <span class="cn">#${cor.order_index+1} · ${esc(cor.name||cor.suggested||'unnamed')} <span class="pill">(${segs.length})</span></span></h4>
-      <div class="cbtns">
-        <button data-act="active" data-cid="${cor.id}">${cor.id===activeCorr?'● active':'set active'}</button>
-        <button data-act="mergeNext" data-cid="${cor.id}">merge ↓ next</button>
+// ── Panel rendering ────────────────────────────────────────────────
+function renderCorrList() {
+  const container = document.getElementById('corridor-list');
+  if (!projectData) { container.innerHTML = ''; return; }
+
+  const corrs = getVisibleCorridors().filter(c => corrMatchesFilter(c.id));
+
+  if (!corrs.length) {
+    container.innerHTML = '<div class="empty-state">No corridors match this filter.</div>';
+    return;
+  }
+
+  container.innerHTML = '';
+  corrs.forEach(corr => {
+    const isOpen = corr.id === openCorrId;
+    const isSelected = corr.id === selectedCorrId;
+    const segs = segmentsOfCorridor(corr.id);
+    const unnamedCount = corridorUnnamedCount(corr.id);
+    const named = corridorIsNamed(corr.id);
+    const dotColor = named ? COLOR_NAMED : COLOR_UNNAMED;
+    const label = corrDisplayName(corr);
+    const isStandalone = segs.length <= 1 && !corr.cor_code;
+
+    const row = document.createElement('div');
+    row.className = `corr-row${isOpen ? ' open' : ''}${isSelected ? ' selected' : ''}`;
+    row.id = `corr-row-${corr.id}`;
+
+    row.innerHTML = `
+      <div class="corr-header">
+        <div class="corr-dot" style="background:${dotColor}"></div>
+        <div class="corr-info">
+          <div class="corr-code">${esc(corr.cor_code || label)}${isStandalone ? ' <em style="font-style:normal;font-weight:400;color:#94a3b8;font-size:11px">standalone</em>' : ''}</div>
+          <div class="corr-meta">${segs.length} seg${segs.length !== 1 ? 's' : ''} · ${unnamedCount} unnamed</div>
+        </div>
+        <span class="corr-chevron">▶</span>
       </div>
-      <div class="seglist" data-cid="${cor.id}"></div>`;
-    const sl=div.querySelector(".seglist");
-    segs.forEach(s=>{
-      const row=document.createElement("div"); row.className="seg"+(curSeg===s.id?" sel":""); row.draggable=true; row.dataset.sid=s.id;
-      row.innerHTML=`<span class="si">${s.seq+1}</span><span class="sn">${esc(s.name||s.suggested||('seg '+s.seg_index))}</span>
-        <button data-act="split" data-cid="${cor.id}" data-seq="${s.seq}" title="split after this segment">✂</button>`;
-      row.onclick=e=>{ if(e.target.dataset.act)return; curSeg=s.id; renderMap(); highlightSel(); };
-      row.ondragstart=e=>{e.dataTransfer.setData("sid",s.id);};
-      sl.appendChild(row);
+      <div class="corr-body">
+        ${buildCorrBody(corr, segs)}
+      </div>
+    `;
+
+    // Header click: accordion toggle + selection
+    row.querySelector('.corr-header').addEventListener('click', () => {
+      if (openCorrId === corr.id) {
+        // Already open: deselect
+        deselectCorridor();
+      } else {
+        selectCorridor(corr.id, 'panel');
+      }
     });
-    sl.ondragover=e=>{e.preventDefault();sl.parentElement.classList.add("dragover");};
-    sl.ondragleave=()=>sl.parentElement.classList.remove("dragover");
-    sl.ondrop=e=>{e.preventDefault();sl.parentElement.classList.remove("dragover");const sid=+e.dataTransfer.getData("sid");moveSeg(sid,cor.id);};
-    list.appendChild(div);
-  });
-  list.querySelectorAll("h4").forEach(h=>h.onclick=()=>{activeCorr=+h.dataset.cid;renderMap();renderCorr();});
-  list.querySelectorAll("button[data-act]").forEach(btn=>btn.onclick=async e=>{
-    e.stopPropagation(); const act=btn.dataset.act, cid=+btn.dataset.cid;
-    if(act==="active"){activeCorr=cid;renderMap();renderCorr();}
-    else if(act==="split"){await jpost(`/api/corridors/${cid}/split`,{after_seq:+btn.dataset.seq}); await reload();}
-    else if(act==="mergeNext"){const i=DATA.corridors.findIndex(c=>c.id===cid); const nx=DATA.corridors[i+1];
-      if(!nx){alert("no corridor after this one");return;} await jpost(`/api/corridors/${cid}/merge`,{target_id:nx.id}); await reload();}
+
+    // Wire up corridor name editor
+    const nameInput = row.querySelector('.corr-name-input');
+    if (nameInput) {
+      nameInput.addEventListener('change', () => saveCorrName(corr.id, nameInput.value));
+      nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') { nameInput.blur(); } });
+    }
+    const useSugBtn = row.querySelector('.use-sug');
+    if (useSugBtn) {
+      useSugBtn.addEventListener('click', () => {
+        const sug = corrSuggestion(corr);
+        if (sug && nameInput) {
+          nameInput.value = sug;
+          saveCorrName(corr.id, sug);
+        }
+      });
+    }
+
+    // Wire up segment cards
+    segs.forEach(seg => {
+      wireSegCard(row, seg, corr.id);
+    });
+
+    container.appendChild(row);
   });
 }
-function highlightSel(){document.querySelectorAll(".seg").forEach(r=>r.classList.toggle("sel",+r.dataset.sid===curSeg));}
 
-/* ---------- mutations ---------- */
-async function saveSeg(id,patch){ Object.assign(DATA.segments.find(s=>s.id===id),patch); await jpatch("/api/segments/"+id,patch);
-  if(mode==="names") renderNames(); }
-async function saveCorr(id,patch){ Object.assign(corrOf(id),patch); await jpatch("/api/corridors/"+id,patch); }
-async function moveSeg(sid,target){ await jpost(`/api/segments/${sid}/move`,{corridor_id:target}); await reload(); }
-async function reload(){const keep=activeCorr; lastFit=null; DATA=await api("/api/projects/"+PID);
-  if(!DATA.corridors.find(c=>c.id===keep)) activeCorr=DATA.corridors[0]&&DATA.corridors[0].id;
-  renderMap(); renderSide();}
-
-/* ---------- enrichment ---------- */
-async function runEnrich(){
-  if(!PID){alert("open a project first");return;}
-  const offline=$("#offline").checked, key=$("#gkey").value.trim(), mode_=$("#mode-sel").value;
-  if(!offline&&!key){alert("enter a Google API key, or tick offline to use only cached results");return;}
-  await jpost(`/api/projects/${PID}/enrich`,{key,mode:mode_,offline});
-  pollProgress();
-}
-async function pollProgress(){
-  const t=setInterval(async()=>{
-    const st=await api(`/api/projects/${PID}/enrich/status`);
-    const pct=st.total?Math.round(st.done/st.total*100):0;
-    $("#prog>div").style.width=pct+"%"; $("#progtxt").textContent=st.running?`${st.phase} ${st.done}/${st.total}`:"";
-    if(!st.running){clearInterval(t);$("#prog>div").style.width="0%";await reload();}
-  },900);
+function buildCorrBody(corr, segs) {
+  const sug = corrSuggestion(corr);
+  const corrNameVal = corr.name || '';
+  return `
+    <div class="corr-name-editor">
+      <input class="corr-name-input" type="text" value="${esc(corrNameVal)}" placeholder="Corridor name…"/>
+      ${sug ? `<button class="use-sug" title="${esc(sug)}">Use: ${esc(sug.length > 20 ? sug.slice(0,20) + '…' : sug)}</button>` : ''}
+    </div>
+    <div class="seg-cards">
+      ${segs.map(seg => buildSegCard(seg)).join('')}
+    </div>
+  `;
 }
 
-/* ---------- misc ---------- */
-function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
-function setMode(m){mode=m;$("#m-names").classList.toggle("on",m==="names");$("#m-corr").classList.toggle("on",m==="corr");renderMap();renderSide();}
+function buildSegCard(seg) {
+  const named = seg.named;
+  // Suggestion chips
+  const chips = buildChips(seg);
+  return `
+    <div class="seg-card" id="seg-card-${seg.id}">
+      <div class="seg-ref">${esc(seg.route_name_imported || '')}</div>
+      <input
+        class="seg-name-input${named ? ' named' : ''}"
+        id="seg-input-${seg.id}"
+        type="text"
+        value="${esc(seg.name || '')}"
+        placeholder="Enter road name…"
+        data-seg-id="${seg.id}"
+      />
+      <div class="seg-chips">${chips}</div>
+    </div>
+  `;
+}
 
-window.addEventListener("DOMContentLoaded",()=>{
-  initMap();
-  $("#proj").onchange=e=>{ if(e.target.value) openProject(+e.target.value); };
-  $("#newbtn").onclick=()=>$("#file").click();
-  $("#file").onchange=async()=>{const f=$("#file").files[0];if(!f)return;
-    const btn=$("#newbtn"); const orig=btn.textContent; btn.textContent="Importing…"; btn.disabled=true;
-    try{
-      const fd=new FormData(); fd.append("file",f,f.name);
-      const res=await api("/api/projects",{method:"POST",body:fd});
-      await loadProjects(res.project_id);
-    }catch(err){ alert("Import failed.\n"+err.message+"\n\nMake sure the file is a GeoJSON FeatureCollection of LineStrings."); }
-    finally{ btn.textContent=orig; btn.disabled=false; $("#file").value=""; }
-  };
-  $("#m-names").onclick=()=>setMode("names");
-  $("#m-corr").onclick=()=>setMode("corr");
-  $("#enrich").onclick=runEnrich;
-  $("#export").onclick=()=>{ if(PID) window.location=`/api/projects/${PID}/export`; };
-  document.addEventListener("keydown",e=>{
-    if(document.activeElement.tagName==="INPUT")return;
-    if(mode==="names"){ if(e.key==="ArrowRight")goSeg(1); else if(e.key==="ArrowLeft")goSeg(-1); }
+function buildChips(seg) {
+  const chips = [];
+  const geo = seg.sug_geocode;
+  const roads = seg.sug_roads;
+  const twin = seg.twin_name;
+
+  if (geo && roads && geo === roads) {
+    chips.push(`<span class="chip-sug" data-fill="${esc(geo)}" data-seg-id="${seg.id}">${esc(geo)}</span>`);
+  } else {
+    if (geo) chips.push(`<span class="chip-sug" data-fill="${esc(geo)}" data-seg-id="${seg.id}">${esc(geo)}</span>`);
+    if (roads) chips.push(`<span class="chip-sug" data-fill="${esc(roads)}" data-seg-id="${seg.id}">${esc(roads)}</span>`);
+  }
+  if (twin) {
+    chips.push(`<span class="chip-twin" data-fill="${esc(twin)}" data-seg-id="${seg.id}">↔ other direction: ${esc(twin)}</span>`);
+  }
+  return chips.join('');
+}
+
+function wireSegCard(rowEl, seg, corrId) {
+  const card = rowEl.querySelector(`#seg-card-${seg.id}`);
+  if (!card) return;
+
+  const input = card.querySelector(`#seg-input-${seg.id}`);
+  if (input) {
+    // Debounced save on input
+    input.addEventListener('input', () => {
+      clearTimeout(saveTimers[seg.id]);
+      saveTimers[seg.id] = setTimeout(() => saveSegName(seg.id, input.value), 800);
+    });
+    // Immediate save on blur
+    input.addEventListener('blur', () => {
+      clearTimeout(saveTimers[seg.id]);
+      saveSegName(seg.id, input.value);
+    });
+    // Enter → save + next unnamed
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        clearTimeout(saveTimers[seg.id]);
+        saveSegName(seg.id, input.value).then(() => jumpToNextUnnamed());
+      }
+    });
+  }
+
+  // Chips
+  card.querySelectorAll('.chip-sug, .chip-twin').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const val = chip.dataset.fill;
+      const sid = parseInt(chip.dataset.segId, 10);
+      const inp = document.getElementById(`seg-input-${sid}`);
+      if (inp) inp.value = val;
+      clearTimeout(saveTimers[sid]);
+      saveSegName(sid, val);
+    });
   });
-  loadProjects();
+}
+
+// ── Save ──────────────────────────────────────────────────────────
+async function saveSegName(segId, value) {
+  const seg = projectData && projectData.segments.find(s => s.id === segId);
+  if (!seg) return;
+  const trimmed = value.trim();
+  // Don't save if unchanged
+  if ((seg.name || '') === trimmed) return;
+
+  try {
+    await apiPatch(`/api/segments/${segId}`, { name: trimmed });
+    seg.name = trimmed || null;
+    seg.named = !!trimmed;
+    // Update input styling
+    const inp = document.getElementById(`seg-input-${segId}`);
+    if (inp) {
+      inp.classList.toggle('named', !!trimmed);
+    }
+    // Recolor map
+    updateCorrPolylineColor(seg.corridor_id);
+    updateProgressUI();
+    showSaveIndicator();
+  } catch (err) {
+    console.error('Save failed:', err);
+  }
+}
+
+async function saveCorrName(corrId, value) {
+  const corr = getCorrObj(corrId);
+  if (!corr) return;
+  const trimmed = value.trim();
+  if ((corr.name || '') === trimmed) return;
+  try {
+    await apiPatch(`/api/corridors/${corrId}`, { name: trimmed });
+    corr.name = trimmed || null;
+    showSaveIndicator();
+  } catch (err) {
+    console.error('Corridor save failed:', err);
+  }
+}
+
+function updateCorrPolylineColor(corrId) {
+  const pl = corridorPolylines[corrId];
+  if (!pl) return;
+  pl.setOptions({ strokeColor: corrColor(corrId) });
+  // Update panel dot
+  const row = document.getElementById(`corr-row-${corrId}`);
+  if (row) {
+    const dot = row.querySelector('.corr-dot');
+    if (dot) dot.style.background = corrColor(corrId);
+  }
+}
+
+// ── Next unnamed ──────────────────────────────────────────────────
+function jumpToNextUnnamed() {
+  if (!projectData) return;
+
+  // Search within current open corridor first, then others
+  const allCorrs = getVisibleCorridors();
+  let startIdx = allCorrs.findIndex(c => c.id === openCorrId);
+  if (startIdx < 0) startIdx = 0;
+
+  // Build ordered search: current corridor segs, then subsequent corridors
+  const orderedCorrs = [
+    ...allCorrs.slice(startIdx),
+    ...allCorrs.slice(0, startIdx)
+  ];
+
+  for (const corr of orderedCorrs) {
+    const segs = segmentsOfCorridor(corr.id);
+    // If same corridor, look after the focused input
+    const unnamedSegs = segs.filter(s => !s.named);
+    if (unnamedSegs.length) {
+      const seg = unnamedSegs[0];
+      // Select corridor if needed
+      selectCorridor(corr.id, 'next-unnamed');
+      fitMapToCorridor(corr.id);
+      // After render, focus the input
+      setTimeout(() => {
+        focusSegmentCard(seg.id);
+        const inp = document.getElementById(`seg-input-${seg.id}`);
+        if (inp) inp.focus();
+      }, 150);
+      return;
+    }
+  }
+  // All named
+  alert('All segments are named! 🎉');
+}
+
+// ── Home / project list ───────────────────────────────────────────
+async function loadProjects() {
+  const list = document.getElementById('project-list');
+  const loading = document.getElementById('home-loading');
+  try {
+    const projects = await apiFetch('/api/projects');
+    loading.style.display = 'none';
+    if (!projects.length) {
+      list.innerHTML = '<div class="empty-state">No projects yet. Import a GeoJSON file to get started.</div>';
+      return;
+    }
+    list.innerHTML = '';
+    projects.forEach(proj => {
+      const item = document.createElement('div');
+      item.className = 'project-item';
+      item.innerHTML = `
+        <div style="flex:1;min-width:0">
+          <div class="proj-name">${esc(proj.name)}</div>
+          <div class="proj-meta">${proj.seg_count} segments · ${proj.named_count || 0} named</div>
+        </div>
+        <button class="proj-del" data-id="${proj.id}" title="Delete project">✕</button>
+      `;
+      item.addEventListener('click', (e) => {
+        if (e.target.classList.contains('proj-del')) return;
+        openProject(proj.id);
+      });
+      item.querySelector('.proj-del').addEventListener('click', async () => {
+        if (!confirm(`Delete project "${proj.name}"?`)) return;
+        try {
+          await apiFetch(`/api/projects/${proj.id}`, { method: 'DELETE' });
+          await loadProjects();
+        } catch(e) { alert('Delete failed: ' + e.message); }
+      });
+      list.appendChild(item);
+    });
+  } catch(e) {
+    loading.textContent = 'Could not load projects. Is the server running?';
+  }
+}
+
+async function openProject(id) {
+  currentProjectId = id;
+  document.getElementById('btn-export').disabled = false;
+
+  // Show loading in panel
+  document.getElementById('home').style.display = 'none';
+  document.getElementById('project-view').style.display = 'flex';
+  document.getElementById('project-view').style.flexDirection = 'column';
+  document.getElementById('corridor-list').innerHTML = '<div class="loading">Loading project…</div>';
+
+  try {
+    projectData = await apiFetch(`/api/projects/${id}`);
+  } catch(e) {
+    document.getElementById('corridor-list').innerHTML = `<div class="empty-state">Error loading project: ${esc(e.message)}</div>`;
+    return;
+  }
+
+  document.getElementById('project-name-label').textContent = projectData.project.name;
+  document.getElementById('header-progress').style.display = 'flex';
+  document.getElementById('btn-next-unnamed').style.display = 'block';
+
+  updateProgressUI();
+  renderCorrList();
+
+  // Map
+  if (googleMap) {
+    renderMap();
+    fitMapToCorridors();
+  }
+}
+
+// ── Import ─────────────────────────────────────────────────────────
+async function handleImport(file) {
+  if (!file) return;
+  const status = document.getElementById('import-status');
+  status.textContent = 'Importing…';
+
+  const fd = new FormData();
+  fd.append('file', file, file.name);
+
+  try {
+    const res = await apiFetch('/api/projects', { method: 'POST', body: fd });
+    status.textContent = '';
+    await openProject(res.project_id);
+  } catch(e) {
+    status.textContent = 'Import failed: ' + e.message;
+  }
+  document.getElementById('file-input').value = '';
+}
+
+// ── Export ─────────────────────────────────────────────────────────
+function triggerExport() {
+  if (!currentProjectId) return;
+  const a = document.createElement('a');
+  a.href = `/api/projects/${currentProjectId}/export`;
+  a.download = '';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+// ── Filter chips ───────────────────────────────────────────────────
+function setFilter(f) {
+  activeFilter = f;
+  document.querySelectorAll('.filter-chip').forEach(chip => {
+    chip.classList.toggle('active', chip.dataset.filter === f);
+  });
+  renderCorrList();
+}
+
+// ── Keyboard ──────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    deselectCorridor();
+    return;
+  }
+  if (e.key === 'Enter') {
+    // Only trigger next-unnamed if no input is focused
+    if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+    jumpToNextUnnamed();
+  }
 });
+
+// ── Drag & drop import ─────────────────────────────────────────────
+const importArea = document.getElementById('import-area');
+importArea.addEventListener('dragover', e => { e.preventDefault(); importArea.style.borderColor = '#4f7bbf'; });
+importArea.addEventListener('dragleave', () => { importArea.style.borderColor = ''; });
+importArea.addEventListener('drop', e => {
+  e.preventDefault();
+  importArea.style.borderColor = '';
+  const file = e.dataTransfer.files[0];
+  if (file) handleImport(file);
+});
+
+// ── Google Maps init ───────────────────────────────────────────────
+function initGoogleMap() {
+  googleMap = new google.maps.Map(document.getElementById('map'), {
+    center: { lat: 25.5, lng: 91.9 },
+    zoom: 12,
+    mapTypeControl: true,
+    streetViewControl: true,
+    fullscreenControl: true,
+    zoomControl: true
+  });
+  initMapClickDeselect();
+  mapsLoaded = true;
+
+  // If a project is already loaded, render
+  if (projectData) {
+    renderMap();
+    fitMapToCorridors();
+  }
+}
+
+// Called by Google Maps script as callback
+window.initGoogleMap = initGoogleMap;
+
+// ── Boot ───────────────────────────────────────────────────────────
+async function boot() {
+  // Load API config
+  let mapsKey = '';
+  try {
+    const cfg = await apiFetch('/api/config');
+    mapsKey = cfg.maps_key || '';
+  } catch(e) {
+    console.warn('Could not fetch /api/config:', e.message);
+  }
+
+  if (mapsKey) {
+    // Load Google Maps JS dynamically
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(mapsKey)}&callback=initGoogleMap`;
+    script.async = true;
+    script.defer = true;
+    script.onerror = () => {
+      document.getElementById('map-no-key').style.display = 'flex';
+      document.getElementById('map').style.display = 'none';
+    };
+    document.head.appendChild(script);
+  } else {
+    document.getElementById('map-no-key').style.display = 'flex';
+    document.getElementById('map').style.display = 'none';
+  }
+
+  // Load project list
+  await loadProjects();
+
+  // Wire up controls
+  document.getElementById('btn-back').addEventListener('click', () => {
+    // Return to home
+    selectedCorrId = null;
+    openCorrId = null;
+    currentProjectId = null;
+    projectData = null;
+    document.getElementById('project-view').style.display = 'none';
+    document.getElementById('home').style.display = 'block';
+    document.getElementById('header-progress').style.display = 'none';
+    document.getElementById('btn-next-unnamed').style.display = 'none';
+    document.getElementById('btn-export').disabled = true;
+    if (googleMap) {
+      Object.values(corridorPolylines).forEach(pl => pl.setMap(null));
+      corridorPolylines = {};
+      clearChildPolylines();
+    }
+    loadProjects();
+  });
+
+  document.getElementById('btn-next-unnamed').addEventListener('click', jumpToNextUnnamed);
+  document.getElementById('btn-export').addEventListener('click', triggerExport);
+
+  document.getElementById('file-input').addEventListener('change', e => {
+    if (e.target.files[0]) handleImport(e.target.files[0]);
+  });
+
+  document.querySelectorAll('.filter-chip').forEach(chip => {
+    chip.addEventListener('click', () => setFilter(chip.dataset.filter));
+  });
+}
+
+// Start
+boot();
 </script>
 </body>
 </html>
