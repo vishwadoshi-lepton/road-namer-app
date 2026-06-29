@@ -1449,9 +1449,13 @@ function closePreview() {
 
 function renderPreviewMap() {
   if (!googleMap) return;
-  // Dim everything else so the parts stand out.
+  // Dim the corridor overview lines so the parts stand out for context...
   Object.values(corridorPolylines).forEach(pl => pl.setOptions({ strokeOpacity: 0.12 }));
-  childPolylines.forEach(p => { if (p.setOptions) p.setOptions({ strokeOpacity: 0.12 }); });
+  // ...but fully remove the selected segment's own child line + markers (numbered
+  // badge, origin dot, direction arrows). strokeOpacity can't fade markers, so they
+  // would otherwise sit under the preview badges and clutter it. The preview overlay
+  // replaces them; closePreview() -> renderMap() restores them.
+  clearChildPolylines();
   // Clear any prior preview overlay.
   Object.values(previewPolylines).forEach(o => Object.values(o).forEach(x => x && x.setMap && x.setMap(null)));
   previewPolylines = {};
