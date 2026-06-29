@@ -216,6 +216,30 @@ def unmerge_segment(sid: int):
         c.close()
     return {"ok": True, "restored_ids": [x["id"] for x in children], "count": len(children)}
 
+@app.get("/api/segments/{sid}/parts")
+def segment_parts(sid: int):
+    c = conn()
+    try:
+        r = c.execute("SELECT * FROM segments WHERE id=?", (sid,)).fetchone()
+        if not r:
+            raise HTTPException(404, "no such segment")
+        order = json.loads(r["props"] or "{}").get("merged_from") or []
+        if not order:
+            raise HTTPException(400, "Segment is not a merged segment.")
+        rows = [dict(x) for x in c.execute(
+            "SELECT * FROM segments WHERE merged_into=? AND project_id=?", (r["uuid"], r["project_id"]))]
+    finally:
+        c.close()
+    rank = {u: i for i, u in enumerate(order)}
+    rows.sort(key=lambda x: rank.get(x["uuid"], len(order)))
+    parts = []
+    for x in rows:
+        mf = json.loads(x["props"] or "{}").get("merged_from")
+        parts.append({"id": x["id"], "uuid": x["uuid"], "coords": json.loads(x["geom"]),
+                      "name": x["name"], "route_name_imported": x["route_name_imported"],
+                      "is_merged": bool(mf), "merged_count": len(mf) if mf else 0})
+    return {"parent_id": sid, "parts": parts}
+
 @app.get("/api/projects/{pid}/export")
 def export_project(pid: int):
     c = conn()

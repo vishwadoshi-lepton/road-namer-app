@@ -215,3 +215,47 @@ def test_unmerge_one_level_recursive(tmp_path):
     assert r2.status_code == 200 and r2.json()["count"] == 3
     uuids = {s["uuid"] for s in c.get(f"/api/projects/{pid}").json()["segments"]}
     assert {"PA-S1", "PA-S2", "PA-S3"} <= uuids
+
+
+# ── Parts preview ──────────────────────────────────────────────────────
+def test_parts_of_whole_corridor_merge(tmp_path):
+    c = make_client(tmp_path)
+    pid = upload_merge(c).json()["project_id"]
+    ids = _ids_by_uuid(c, pid)
+    mid = c.post(f"/api/projects/{pid}/merge",
+                 json={"segment_ids": [ids["PA-S1"], ids["PA-S2"], ids["PA-S3"]], "name": "A"}
+                 ).json()["merged_segment_id"]
+    r = c.get(f"/api/segments/{mid}/parts")
+    assert r.status_code == 200
+    parts = r.json()["parts"]
+    assert [p["uuid"] for p in parts] == ["PA-S1", "PA-S2", "PA-S3"]   # chain order
+    assert all(p["is_merged"] is False for p in parts)
+    assert all("coords" in p and len(p["coords"]) >= 2 for p in parts)
+
+def test_parts_nested_and_drilldown(tmp_path):
+    c = make_client(tmp_path)
+    pid = upload_merge(c).json()["project_id"]
+    ids = _ids_by_uuid(c, pid)
+    m1 = c.post(f"/api/projects/{pid}/merge",
+                json={"segment_ids": [ids["PA-S1"], ids["PA-S2"], ids["PA-S3"]], "name": "A"}
+                ).json()["merged_segment_id"]
+    m2 = c.post(f"/api/projects/{pid}/merge",
+                json={"segment_ids": [m1, ids["SC"]], "name": "AC"}).json()["merged_segment_id"]
+    top = c.get(f"/api/segments/{m2}/parts").json()["parts"]
+    assert len(top) == 2
+    m1part = [p for p in top if p["id"] == m1][0]
+    assert m1part["is_merged"] is True and m1part["merged_count"] == 3
+    # drill into M1 (now soft-deleted) by its id
+    deep = c.get(f"/api/segments/{m1}/parts").json()["parts"]
+    assert [p["uuid"] for p in deep] == ["PA-S1", "PA-S2", "PA-S3"]
+
+def test_parts_rejects_non_merged(tmp_path):
+    c = make_client(tmp_path)
+    pid = upload_merge(c).json()["project_id"]
+    sid = _ids_by_uuid(c, pid)["SC"]
+    assert c.get(f"/api/segments/{sid}/parts").status_code == 400
+
+def test_parts_404_missing(tmp_path):
+    c = make_client(tmp_path)
+    upload_merge(c)
+    assert c.get(f"/api/segments/999999/parts").status_code == 404
