@@ -89,6 +89,21 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 .unmerge-btn { margin-top:7px; padding:4px 10px; font-size:11px; border-radius:6px; border:1px solid #d4c5f9; background:#f5f3ff; color:#6d3fbf; cursor:pointer; }
 .unmerge-btn:hover { background:#ede9fe; }
 
+/* Parts preview */
+.preview-btn { margin-top:7px; margin-left:6px; padding:4px 10px; font-size:11px; border-radius:6px; border:1px solid #c7d2fe; background:#eef2ff; color:#4338ca; cursor:pointer; }
+.preview-btn:hover { background:#e0e7ff; }
+.preview-block { margin-top:8px; border-top:1px dashed #e2e8f0; padding-top:8px; }
+.preview-crumbs { font-size:11px; color:#64748b; margin-bottom:6px; }
+.preview-crumbs .crumb { color:#4338ca; cursor:pointer; }
+.preview-crumbs .crumb:hover { text-decoration:underline; }
+.preview-part { display:flex; align-items:center; gap:8px; border:1px solid #e2e8f0; border-radius:6px; padding:6px 8px; margin:4px 0; }
+.preview-part.pv-hover { border-color:#1e293b; background:#f8fafc; }
+.preview-part.pv-merged { cursor:pointer; }
+.preview-part .pv-num { width:18px;height:18px;border-radius:50%;color:#fff;font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0; }
+.preview-part .pv-name { flex:1;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.preview-part .pv-len { font-size:11px;color:#94a3b8;flex-shrink:0; }
+.preview-close { margin-top:6px; padding:4px 10px; font-size:11px; border-radius:6px; border:1px solid #e2e8f0; background:#fff; color:#64748b; cursor:pointer; }
+
 /* Body */
 #body { display: flex; flex: 1; min-height: 0; }
 
@@ -396,6 +411,15 @@ let mergeSelection = new Set();    // selected segment ids
 let mergeName = '';                // merged-segment name (pre-filled / user-edited)
 let mergeOverlayPolylines = [];    // all live-segment polylines drawn in merge mode
 let mergeHighlight = [];           // transient highlight (arrows) for chooser hover
+
+// ── Parts-preview state ────────────────────────────────────────────
+let previewRootId = null;     // seg id whose card hosts the preview block
+let previewStack = [];        // breadcrumb [{id,label}]
+let previewParts = [];        // current level's parts
+let previewPolylines = {};    // partId -> {core, casing, badge, arrow}
+let previewHoverId = null;
+const PREVIEW_COLORS = ['#7c3aed', '#f59e0b'];
+function previewColor(i) { return PREVIEW_COLORS[i % PREVIEW_COLORS.length]; }
 
 // ── Helpers ────────────────────────────────────────────────────────
 function esc(s) {
@@ -1047,6 +1071,7 @@ document.addEventListener('mousemove', e => {
 
 // ── Selection ──────────────────────────────────────────────────────
 function selectCorridor(corrId, source) {
+  if (previewRootId) clearPreviewState();
   selectedCorrId = corrId;
 
   // Map: re-render with selection
@@ -1060,6 +1085,7 @@ function selectCorridor(corrId, source) {
 }
 
 function deselectCorridor() {
+  if (previewRootId) clearPreviewState();
   selectedCorrId = null;
   openCorrId = null;
   renderMap();
@@ -1219,6 +1245,8 @@ function buildSegCard(seg, idx) {
   const badgeHtml = badgeNum ? `<span class="seg-badge">${badgeNum}</span>` : '';
   const mergedTag = seg.is_merged ? `<span class="merged-tag">merged (${seg.merged_from.length})</span>` : '';
   const unmergeBtn = seg.is_merged ? `<button class="unmerge-btn" data-seg-id="${seg.id}">Unmerge</button>` : '';
+  const previewBtn = seg.is_merged ? `<button class="preview-btn" data-seg-id="${seg.id}">${previewRootId === seg.id ? 'Hide parts' : 'Preview parts'}</button>` : '';
+  const previewBlock = (previewRootId === seg.id) ? buildPreviewBlock() : '';
   return `
     <div class="seg-card${named ? ' named' : ''}" id="seg-card-${seg.id}">
       <div class="seg-ref">${badgeHtml}${esc(seg.route_name_imported || '')}${mergedTag}<span class="seg-len">${fmtLen(segLengthM(seg.coords))}</span></div>
@@ -1234,9 +1262,29 @@ function buildSegCard(seg, idx) {
         <button class="clear-input" title="Clear" tabindex="-1">×</button>
       </div>
       <div class="seg-chips">${chips}</div>
-      ${unmergeBtn}
+      ${unmergeBtn}${previewBtn}
+      ${previewBlock}
     </div>
   `;
+}
+
+function buildPreviewBlock() {
+  const crumbs = previewStack.map((c, i) =>
+    `<span class="crumb" data-crumb="${i}">${esc(c.label)}</span>`).join(' › ');
+  const rows = previewParts.map((p, i) => {
+    const nm = p.name || p.route_name_imported || ('Segment ' + p.id);
+    const tag = p.is_merged ? ` <span class="merged-tag">merged (${p.merged_count})</span>` : '';
+    const len = fmtLen(segLengthM(p.coords));
+    return `<div class="preview-part${p.is_merged ? ' pv-merged' : ''}" data-part-id="${p.id}">
+      <span class="pv-num" style="background:${previewColor(i)}">${i + 1}</span>
+      <span class="pv-name">${esc(nm)}${tag}</span>
+      <span class="pv-len">${len}</span></div>`;
+  }).join('');
+  return `<div class="preview-block">
+    <div class="preview-crumbs">Parts: ${crumbs}</div>
+    ${rows}
+    <button class="preview-close">Close preview</button>
+  </div>`;
 }
 
 function buildChips(seg) {
@@ -1311,6 +1359,26 @@ function wireSegCard(rowEl, seg, corrId) {
   const unmergeBtn = card.querySelector('.unmerge-btn');
   if (unmergeBtn) unmergeBtn.addEventListener('click', (e) => { e.stopPropagation(); unmergeSegment(seg); });
 
+  // Preview parts button + (when active) the inline block's controls
+  const previewBtn = card.querySelector('.preview-btn');
+  if (previewBtn) previewBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (previewRootId === seg.id) closePreview(); else enterPreview(seg);
+  });
+  if (previewRootId === seg.id) {
+    card.querySelectorAll('.preview-crumbs .crumb').forEach(cr =>
+      cr.addEventListener('click', (e) => { e.stopPropagation(); gotoCrumb(Number(cr.dataset.crumb)); }));
+    card.querySelectorAll('.preview-part').forEach(row => {
+      const pid = Number(row.dataset.partId);
+      row.addEventListener('mouseenter', () => setPreviewHover(pid, true));
+      row.addEventListener('mouseleave', () => setPreviewHover(pid, false));
+      const part = previewParts.find(p => p.id === pid);
+      if (part && part.is_merged) row.addEventListener('click', (e) => { e.stopPropagation(); drillPreview(part); });
+    });
+    const closeBtn = card.querySelector('.preview-close');
+    if (closeBtn) closeBtn.addEventListener('click', (e) => { e.stopPropagation(); closePreview(); });
+  }
+
   // Map↔panel hover sync
   card.addEventListener('mouseenter', () => setSegHover(seg.id, true));
   card.addEventListener('mouseleave', () => setSegHover(seg.id, false));
@@ -1333,6 +1401,91 @@ async function unmergeSegment(seg) {
       } catch (err) { alert('Unmerge failed: ' + err.message); }
     }
   });
+}
+
+// ── Parts preview ──────────────────────────────────────────────────
+async function loadPreviewLevel(id) {
+  const res = await apiFetch(`/api/segments/${id}/parts`);
+  previewParts = res.parts || [];
+}
+
+async function enterPreview(seg) {
+  if (mergeMode) return;
+  previewRootId = seg.id;
+  previewStack = [{ id: seg.id, label: seg.name || seg.route_name_imported || ('Segment ' + seg.id) }];
+  try { await loadPreviewLevel(seg.id); }
+  catch (e) { alert('Preview failed: ' + e.message); clearPreviewState(); return; }
+  renderCorrList();
+  renderPreviewMap();
+  const card = document.getElementById(`seg-card-${seg.id}`);
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+async function drillPreview(part) {
+  previewStack.push({ id: part.id, label: part.name || part.route_name_imported || ('Segment ' + part.id) });
+  try { await loadPreviewLevel(part.id); } catch (e) { alert('Preview failed: ' + e.message); return; }
+  renderCorrList();
+  renderPreviewMap();
+}
+
+async function gotoCrumb(i) {
+  previewStack = previewStack.slice(0, i + 1);
+  try { await loadPreviewLevel(previewStack[i].id); } catch (e) { return; }
+  renderCorrList();
+  renderPreviewMap();
+}
+
+function clearPreviewState() {
+  previewRootId = null; previewStack = []; previewParts = [];
+  Object.values(previewPolylines).forEach(o => Object.values(o).forEach(x => x && x.setMap && x.setMap(null)));
+  previewPolylines = {}; previewHoverId = null;
+}
+
+function closePreview() {
+  clearPreviewState();
+  renderMap();
+  renderCorrList();
+}
+
+function renderPreviewMap() {
+  if (!googleMap) return;
+  // Dim everything else so the parts stand out.
+  Object.values(corridorPolylines).forEach(pl => pl.setOptions({ strokeOpacity: 0.12 }));
+  childPolylines.forEach(p => { if (p.setOptions) p.setOptions({ strokeOpacity: 0.12 }); });
+  // Clear any prior preview overlay.
+  Object.values(previewPolylines).forEach(o => Object.values(o).forEach(x => x && x.setMap && x.setMap(null)));
+  previewPolylines = {};
+  previewParts.forEach((part, i) => {
+    const path = lngLatToGM(part.coords);
+    if (path.length < 2) return;
+    const color = previewColor(i);
+    const casing = new google.maps.Polyline({ path, map: null, strokeColor: '#ffffff', strokeWeight: 12, strokeOpacity: 0.95, zIndex: 30, clickable: false });
+    const core = new google.maps.Polyline({ path, map: googleMap, strokeColor: color, strokeWeight: 7, strokeOpacity: 1, zIndex: 31 });
+    const mid = midpointGM(part.coords);
+    const badge = new google.maps.Marker({ position: mid, map: googleMap, zIndex: 50, clickable: false,
+      icon: { path: google.maps.SymbolPath.CIRCLE, scale: 11, fillColor: color, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 1.5 },
+      label: { text: String(i + 1), color: '#fff', fontSize: '11px', fontWeight: '700' } });
+    const a = path[path.length - 2], b = path[path.length - 1];
+    const arrow = new google.maps.Marker({ position: b, map: googleMap, zIndex: 51, clickable: false,
+      icon: { path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW, scale: 3.8, rotation: headingDeg(a, b), fillColor: color, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 1 } });
+    previewPolylines[part.id] = { core, casing, badge, arrow };
+    core.addListener('mouseover', () => setPreviewHover(part.id, true));
+    core.addListener('mouseout', () => setPreviewHover(part.id, false));
+  });
+  const bounds = new google.maps.LatLngBounds();
+  previewParts.forEach(p => p.coords.forEach(([lng, lat]) => bounds.extend({ lat, lng })));
+  if (!bounds.isEmpty()) googleMap.fitBounds(bounds, { top: 60, right: 60, bottom: 60, left: 60 });
+}
+
+function setPreviewHover(partId, on) {
+  previewHoverId = on ? partId : (previewHoverId === partId ? null : previewHoverId);
+  Object.entries(previewPolylines).forEach(([id, o]) => {
+    const hov = Number(id) === previewHoverId;
+    if (o.casing) o.casing.setMap(hov ? googleMap : null);
+    if (o.core) o.core.setOptions({ zIndex: hov ? 41 : 31 });
+  });
+  document.querySelectorAll('.preview-part').forEach(row =>
+    row.classList.toggle('pv-hover', Number(row.dataset.partId) === previewHoverId));
 }
 
 // ── Flush pending debounced saves ─────────────────────────────────
@@ -1532,6 +1685,7 @@ function validateChain(ids) {
 
 function enterMergeMode() {
   if (!projectData) return;
+  if (previewRootId) clearPreviewState();
   mergeMode = true;
   mergeSelection = new Set();
   mergeName = '';
@@ -1957,6 +2111,7 @@ document.addEventListener('keydown', e => {
     if (ov && ov.classList.contains('show')) { closeModal(); return; }
     const box = document.getElementById('merge-chooser');
     if (box && box.style.display === 'block') { box.style.display = 'none'; clearMergeHighlight(); return; }
+    if (previewRootId) { closePreview(); return; }
     if (mergeMode) { exitMergeMode(); return; }
     deselectCorridor();
     return;
@@ -2039,6 +2194,7 @@ async function boot() {
   document.getElementById('btn-back').addEventListener('click', () => {
     // Flush any pending debounced saves before tearing down project state
     flushPendingSaves();
+    if (previewRootId) clearPreviewState();
     if (mergeMode) exitMergeMode();
     document.getElementById('btn-merge').style.display = 'none';
     // Return to home
@@ -2087,6 +2243,7 @@ async function boot() {
   const panelSearch = document.getElementById('panel-search');
   panelSearch.addEventListener('input', e => {
     searchQuery = e.target.value;
+    if (previewRootId) clearPreviewState();
     renderPanel();
   });
   const panelSearchClear = document.getElementById('panel-search-clear');
