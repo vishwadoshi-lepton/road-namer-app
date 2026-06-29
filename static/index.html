@@ -89,6 +89,21 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 .unmerge-btn { margin-top:7px; padding:4px 10px; font-size:11px; border-radius:6px; border:1px solid #d4c5f9; background:#f5f3ff; color:#6d3fbf; cursor:pointer; }
 .unmerge-btn:hover { background:#ede9fe; }
 
+/* Parts preview */
+.preview-btn { margin-top:7px; margin-left:6px; padding:4px 10px; font-size:11px; border-radius:6px; border:1px solid #c7d2fe; background:#eef2ff; color:#4338ca; cursor:pointer; }
+.preview-btn:hover { background:#e0e7ff; }
+.preview-block { margin-top:8px; border-top:1px dashed #e2e8f0; padding-top:8px; }
+.preview-crumbs { font-size:11px; color:#64748b; margin-bottom:6px; }
+.preview-crumbs .crumb { color:#4338ca; cursor:pointer; }
+.preview-crumbs .crumb:hover { text-decoration:underline; }
+.preview-part { display:flex; align-items:center; gap:8px; border:1px solid #e2e8f0; border-radius:6px; padding:6px 8px; margin:4px 0; }
+.preview-part.pv-hover { border-color:#1e293b; background:#f8fafc; }
+.preview-part.pv-merged { cursor:pointer; }
+.preview-part .pv-num { width:18px;height:18px;border-radius:50%;color:#fff;font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0; }
+.preview-part .pv-name { flex:1;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.preview-part .pv-len { font-size:11px;color:#94a3b8;flex-shrink:0; }
+.preview-close { margin-top:6px; padding:4px 10px; font-size:11px; border-radius:6px; border:1px solid #e2e8f0; background:#fff; color:#64748b; cursor:pointer; }
+
 /* Body */
 #body { display: flex; flex: 1; min-height: 0; }
 
@@ -396,6 +411,15 @@ let mergeSelection = new Set();    // selected segment ids
 let mergeName = '';                // merged-segment name (pre-filled / user-edited)
 let mergeOverlayPolylines = [];    // all live-segment polylines drawn in merge mode
 let mergeHighlight = [];           // transient highlight (arrows) for chooser hover
+
+// ── Parts-preview state ────────────────────────────────────────────
+let previewRootId = null;     // seg id whose card hosts the preview block
+let previewStack = [];        // breadcrumb [{id,label}]
+let previewParts = [];        // current level's parts
+let previewPolylines = {};    // partId -> {core, casing, badge, arrow}
+let previewHoverId = null;
+const PREVIEW_COLORS = ['#7c3aed', '#f59e0b'];
+function previewColor(i) { return PREVIEW_COLORS[i % PREVIEW_COLORS.length]; }
 
 // ── Helpers ────────────────────────────────────────────────────────
 function esc(s) {
@@ -1047,6 +1071,7 @@ document.addEventListener('mousemove', e => {
 
 // ── Selection ──────────────────────────────────────────────────────
 function selectCorridor(corrId, source) {
+  if (previewRootId) clearPreviewState();
   selectedCorrId = corrId;
 
   // Map: re-render with selection
@@ -1060,6 +1085,7 @@ function selectCorridor(corrId, source) {
 }
 
 function deselectCorridor() {
+  if (previewRootId) clearPreviewState();
   selectedCorrId = null;
   openCorrId = null;
   renderMap();
@@ -1219,6 +1245,9 @@ function buildSegCard(seg, idx) {
   const badgeHtml = badgeNum ? `<span class="seg-badge">${badgeNum}</span>` : '';
   const mergedTag = seg.is_merged ? `<span class="merged-tag">merged (${seg.merged_from.length})</span>` : '';
   const unmergeBtn = seg.is_merged ? `<button class="unmerge-btn" data-seg-id="${seg.id}">Unmerge</button>` : '';
+  const previewBtn = seg.is_merged ? `<button class="preview-btn" data-seg-id="${seg.id}">${previewRootId === seg.id ? 'Hide parts' : 'Preview parts'}</button>` : '';
+  const extendBtn = seg.is_merged ? `<button class="preview-btn" data-extend="${seg.id}">Extend merge</button>` : '';
+  const previewBlock = (previewRootId === seg.id) ? buildPreviewBlock() : '';
   return `
     <div class="seg-card${named ? ' named' : ''}" id="seg-card-${seg.id}">
       <div class="seg-ref">${badgeHtml}${esc(seg.route_name_imported || '')}${mergedTag}<span class="seg-len">${fmtLen(segLengthM(seg.coords))}</span></div>
@@ -1234,9 +1263,29 @@ function buildSegCard(seg, idx) {
         <button class="clear-input" title="Clear" tabindex="-1">×</button>
       </div>
       <div class="seg-chips">${chips}</div>
-      ${unmergeBtn}
+      ${unmergeBtn}${previewBtn}${extendBtn}
+      ${previewBlock}
     </div>
   `;
+}
+
+function buildPreviewBlock() {
+  const crumbs = previewStack.map((c, i) =>
+    `<span class="crumb" data-crumb="${i}">${esc(c.label)}</span>`).join(' › ');
+  const rows = previewParts.map((p, i) => {
+    const nm = p.name || p.route_name_imported || ('Segment ' + p.id);
+    const tag = p.is_merged ? ` <span class="merged-tag">merged (${p.merged_count})</span>` : '';
+    const len = fmtLen(segLengthM(p.coords));
+    return `<div class="preview-part${p.is_merged ? ' pv-merged' : ''}" data-part-id="${p.id}">
+      <span class="pv-num" style="background:${previewColor(i)}">${i + 1}</span>
+      <span class="pv-name">${esc(nm)}${tag}</span>
+      <span class="pv-len">${len}</span></div>`;
+  }).join('');
+  return `<div class="preview-block">
+    <div class="preview-crumbs">Parts: ${crumbs}</div>
+    ${rows}
+    <button class="preview-close">Close preview</button>
+  </div>`;
 }
 
 function buildChips(seg) {
@@ -1311,6 +1360,28 @@ function wireSegCard(rowEl, seg, corrId) {
   const unmergeBtn = card.querySelector('.unmerge-btn');
   if (unmergeBtn) unmergeBtn.addEventListener('click', (e) => { e.stopPropagation(); unmergeSegment(seg); });
 
+  // Preview parts button + (when active) the inline block's controls
+  const previewBtn = card.querySelector('.preview-btn[data-seg-id]');
+  if (previewBtn) previewBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (previewRootId === seg.id) closePreview(); else enterPreview(seg);
+  });
+  const extendBtn = card.querySelector('.preview-btn[data-extend]');
+  if (extendBtn) extendBtn.addEventListener('click', (e) => { e.stopPropagation(); startExtend(seg); });
+  if (previewRootId === seg.id) {
+    card.querySelectorAll('.preview-crumbs .crumb').forEach(cr =>
+      cr.addEventListener('click', (e) => { e.stopPropagation(); gotoCrumb(Number(cr.dataset.crumb)); }));
+    card.querySelectorAll('.preview-part').forEach(row => {
+      const pid = Number(row.dataset.partId);
+      row.addEventListener('mouseenter', () => setPreviewHover(pid, true));
+      row.addEventListener('mouseleave', () => setPreviewHover(pid, false));
+      const part = previewParts.find(p => p.id === pid);
+      if (part && part.is_merged) row.addEventListener('click', (e) => { e.stopPropagation(); drillPreview(part); });
+    });
+    const closeBtn = card.querySelector('.preview-close');
+    if (closeBtn) closeBtn.addEventListener('click', (e) => { e.stopPropagation(); closePreview(); });
+  }
+
   // Map↔panel hover sync
   card.addEventListener('mouseenter', () => setSegHover(seg.id, true));
   card.addEventListener('mouseleave', () => setSegHover(seg.id, false));
@@ -1333,6 +1404,95 @@ async function unmergeSegment(seg) {
       } catch (err) { alert('Unmerge failed: ' + err.message); }
     }
   });
+}
+
+// ── Parts preview ──────────────────────────────────────────────────
+async function loadPreviewLevel(id) {
+  const res = await apiFetch(`/api/segments/${id}/parts`);
+  previewParts = res.parts || [];
+}
+
+async function enterPreview(seg) {
+  if (mergeMode) return;
+  previewRootId = seg.id;
+  previewStack = [{ id: seg.id, label: seg.name || seg.route_name_imported || ('Segment ' + seg.id) }];
+  try { await loadPreviewLevel(seg.id); }
+  catch (e) { alert('Preview failed: ' + e.message); clearPreviewState(); return; }
+  renderCorrList();
+  renderPreviewMap();
+  const card = document.getElementById(`seg-card-${seg.id}`);
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+async function drillPreview(part) {
+  previewStack.push({ id: part.id, label: part.name || part.route_name_imported || ('Segment ' + part.id) });
+  try { await loadPreviewLevel(part.id); } catch (e) { alert('Preview failed: ' + e.message); return; }
+  renderCorrList();
+  renderPreviewMap();
+}
+
+async function gotoCrumb(i) {
+  previewStack = previewStack.slice(0, i + 1);
+  try { await loadPreviewLevel(previewStack[i].id); } catch (e) { return; }
+  renderCorrList();
+  renderPreviewMap();
+}
+
+function clearPreviewState() {
+  previewRootId = null; previewStack = []; previewParts = [];
+  Object.values(previewPolylines).forEach(o => Object.values(o).forEach(x => x && x.setMap && x.setMap(null)));
+  previewPolylines = {}; previewHoverId = null;
+}
+
+function closePreview() {
+  clearPreviewState();
+  renderMap();
+  renderCorrList();
+}
+
+function renderPreviewMap() {
+  if (!googleMap) return;
+  // Dim the corridor overview lines so the parts stand out for context...
+  Object.values(corridorPolylines).forEach(pl => pl.setOptions({ strokeOpacity: 0.12 }));
+  // ...but fully remove the selected segment's own child line + markers (numbered
+  // badge, origin dot, direction arrows). strokeOpacity can't fade markers, so they
+  // would otherwise sit under the preview badges and clutter it. The preview overlay
+  // replaces them; closePreview() -> renderMap() restores them.
+  clearChildPolylines();
+  // Clear any prior preview overlay.
+  Object.values(previewPolylines).forEach(o => Object.values(o).forEach(x => x && x.setMap && x.setMap(null)));
+  previewPolylines = {};
+  previewParts.forEach((part, i) => {
+    const path = lngLatToGM(part.coords);
+    if (path.length < 2) return;
+    const color = previewColor(i);
+    const casing = new google.maps.Polyline({ path, map: null, strokeColor: '#ffffff', strokeWeight: 12, strokeOpacity: 0.95, zIndex: 30, clickable: false });
+    const core = new google.maps.Polyline({ path, map: googleMap, strokeColor: color, strokeWeight: 7, strokeOpacity: 1, zIndex: 31 });
+    const mid = midpointGM(part.coords);
+    const badge = new google.maps.Marker({ position: mid, map: googleMap, zIndex: 50, clickable: false,
+      icon: { path: google.maps.SymbolPath.CIRCLE, scale: 11, fillColor: color, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 1.5 },
+      label: { text: String(i + 1), color: '#fff', fontSize: '11px', fontWeight: '700' } });
+    const a = path[path.length - 2], b = path[path.length - 1];
+    const arrow = new google.maps.Marker({ position: b, map: googleMap, zIndex: 51, clickable: false,
+      icon: { path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW, scale: 3.8, rotation: headingDeg(a, b), fillColor: color, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 1 } });
+    previewPolylines[part.id] = { core, casing, badge, arrow };
+    core.addListener('mouseover', () => setPreviewHover(part.id, true));
+    core.addListener('mouseout', () => setPreviewHover(part.id, false));
+  });
+  const bounds = new google.maps.LatLngBounds();
+  previewParts.forEach(p => p.coords.forEach(([lng, lat]) => bounds.extend({ lat, lng })));
+  if (!bounds.isEmpty()) googleMap.fitBounds(bounds, { top: 60, right: 60, bottom: 60, left: 60 });
+}
+
+function setPreviewHover(partId, on) {
+  previewHoverId = on ? partId : (previewHoverId === partId ? null : previewHoverId);
+  Object.entries(previewPolylines).forEach(([id, o]) => {
+    const hov = Number(id) === previewHoverId;
+    if (o.casing) o.casing.setMap(hov ? googleMap : null);
+    if (o.core) o.core.setOptions({ zIndex: hov ? 41 : 31 });
+  });
+  document.querySelectorAll('.preview-part').forEach(row =>
+    row.classList.toggle('pv-hover', Number(row.dataset.partId) === previewHoverId));
 }
 
 // ── Flush pending debounced saves ─────────────────────────────────
@@ -1504,13 +1664,24 @@ function showModal({ title, message = '', withInput = false, inputValue = '', co
 function renderPanel() { if (mergeMode) renderMergePanel(); else renderCorrList(); }
 
 // ── Merge mode ─────────────────────────────────────────────────────
-function liveSegments() { return projectData ? projectData.segments : []; }
+// Merge mode operates on the ATOM layer: every atomic segment, INCLUDING ones
+// already hidden inside a merge, so an atom can be reused across merges.
+let mergeAtoms = [];
+const atomBy = new Map();
+let extendContext = null;      // {id, name} when extending an existing road
+async function loadMergeAtoms() {
+  const res = await apiFetch(`/api/projects/${currentProjectId}/atoms`);
+  mergeAtoms = res.atoms || [];
+  atomBy.clear(); mergeAtoms.forEach(a => atomBy.set(a.id, a));
+}
+function atomById(id) { return atomBy.get(id); }
+function liveSegments() { return mergeAtoms; }
 
 function near2(a, b, tol = 1e-4) { return Math.abs(a[0]-b[0]) < tol && Math.abs(a[1]-b[1]) < tol; }
 
 // ids -> {ok, reason, order:[ids]} — mirrors merge.order_chain on the server.
 function validateChain(ids) {
-  const segs = ids.map(id => projectData.segments.find(s => s.id === id)).filter(Boolean);
+  const segs = ids.map(id => atomById(id)).filter(Boolean);
   if (segs.length < 2) return { ok: false, reason: 'Select at least two segments.', order: [] };
   const start = s => s.coords[0], end = s => s.coords[s.coords.length - 1];
   const starts = segs.filter(s => !segs.some(o => o !== s && near2(start(s), end(o))));
@@ -1530,8 +1701,9 @@ function validateChain(ids) {
   return { ok: true, reason: `Connected chain of ${order.length}`, order: order.map(s => s.id) };
 }
 
-function enterMergeMode() {
+async function enterMergeMode() {
   if (!projectData) return;
+  if (previewRootId) clearPreviewState();
   mergeMode = true;
   mergeSelection = new Set();
   mergeName = '';
@@ -1539,6 +1711,7 @@ function enterMergeMode() {
   const btn = document.getElementById('btn-merge');
   btn.classList.add('active'); btn.textContent = 'Exit merge';
   document.getElementById('filter-bar').style.display = 'none';
+  try { await loadMergeAtoms(); } catch (e) { alert('Could not load segments: ' + e.message); }
   renderMergeMap();
   renderMergePanel();
 }
@@ -1547,6 +1720,7 @@ function exitMergeMode() {
   mergeMode = false;
   mergeSelection = new Set();
   mergeName = '';
+  extendContext = null;
   clearMergeOverlay();
   document.getElementById('merge-chooser').style.display = 'none';
   const btn = document.getElementById('btn-merge');
@@ -1556,14 +1730,28 @@ function exitMergeMode() {
   renderCorrList();
 }
 
+// Extend an existing merged road: open Merge mode pre-seeded with its atoms.
+async function startExtend(seg) {
+  if (mergeMode) return;
+  let la;
+  try { la = await apiFetch(`/api/segments/${seg.id}/leaf_atoms`); }
+  catch (e) { alert('Extend failed: ' + e.message); return; }
+  extendContext = { id: seg.id, name: seg.name || '' };
+  await enterMergeMode();                       // loads atoms, resets selection
+  mergeSelection = new Set((la.atoms || []).map(a => a.id).filter(id => atomById(id)));
+  mergeName = extendContext.name;
+  renderMergeMap();
+  renderMergePanel();
+}
+
 // The current selection in chain order (trivial for 0/1, validated for 2+).
 function orderedSelectionSegs() {
   const ids = [...mergeSelection];
   if (ids.length === 0) return [];
-  if (ids.length === 1) { const s = projectData.segments.find(x => x.id === ids[0]); return s ? [s] : []; }
+  if (ids.length === 1) { const s = atomById(ids[0]); return s ? [s] : []; }
   const v = validateChain(ids);
   const order = v.ok ? v.order : ids;
-  return order.map(id => projectData.segments.find(s => s.id === id)).filter(Boolean);
+  return order.map(id => atomById(id)).filter(Boolean);
 }
 
 // Set of live segment ids that may be ADDED next (connect to head or tail,
@@ -1600,7 +1788,7 @@ function toggleMergeSeg(id) {
   // Auto pre-fill the name when the selected segments share one saved name.
   if (!mergeName) {
     const names = [...new Set([...mergeSelection]
-      .map(sid => projectData.segments.find(s => s.id === sid))
+      .map(sid => atomById(sid))
       .filter(Boolean).map(s => s.name).filter(Boolean))];
     if (names.length === 1) mergeName = names[0];
   }
@@ -1626,11 +1814,12 @@ function renderMergeMap() {
     const path = lngLatToGM(seg.coords);
     if (path.length < 2) return;
     const isSel = mergeSelection.has(seg.id);
+    const reused = seg.in_merges > 0;                                                          // already used in a road
     let color, weight, opacity;
     if (isSel) { color = '#2563eb'; weight = 8; opacity = 1; }                                 // selected = blue
-    else if (mergeSelection.size === 0) { color = seg.named ? COLOR_NAMED : COLOR_UNNAMED; weight = 6; opacity = 1; }
+    else if (mergeSelection.size === 0) { color = reused ? '#8b5cf6' : (seg.name ? COLOR_NAMED : COLOR_UNNAMED); weight = 6; opacity = 1; }
     else if (cands.has(seg.id)) { color = '#ef4444'; weight = 7; opacity = 1; }                // connectable = red
-    else { color = '#cbd5e1'; weight = 5; opacity = 0.5; }                                     // ineligible = dimmed
+    else { color = reused ? '#8b5cf6' : '#cbd5e1'; weight = 5; opacity = reused ? 0.65 : 0.5; } // dimmed (violet if reused)
     const pl = new google.maps.Polyline({
       path, map: googleMap, strokeColor: color, strokeWeight: weight, strokeOpacity: opacity,
       zIndex: isSel ? 5 : (color === '#ef4444' ? 4 : 2)
@@ -1711,7 +1900,7 @@ function showMergeChooser(candidates, e) {
 
 function highlightSegOnMap(id) {
   clearMergeHighlight();
-  const seg = projectData.segments.find(s => s.id === id);
+  const seg = atomById(id);
   if (!seg) return;
   const path = lngLatToGM(seg.coords);
   if (path.length < 2) return;
@@ -1730,47 +1919,53 @@ function renderMergePanel() {
   const orderIndex = {}; orderedSelectionSegs().forEach((s, i) => orderIndex[s.id] = i + 1);
   const cands = mergeSelection.size ? mergeCandidates() : null;
 
-  const rowHtml = (seg) => {
-    const sel = mergeSelection.has(seg.id);
-    const num = orderIndex[seg.id] || '';
-    const nm = seg.name || seg.route_name_imported || ('Segment ' + seg.id);
-    const mergedTag = seg.is_merged ? ` <span class="merged-tag">merged (${seg.merged_from.length})</span>` : '';
+  const rowHtml = (a) => {
+    const sel = mergeSelection.has(a.id);
+    const num = orderIndex[a.id] || '';
+    const nm = a.name || a.route_name_imported || ('Segment ' + a.id);
+    const reuse = a.in_merges > 0 ? ` <span class="merged-tag">in ${a.in_merges}</span>` : '';
     let cls = 'merge-seg-row';
     if (sel) cls += ' sel';
-    else if (cands && cands.has(seg.id)) cls += ' cand';
+    else if (cands && cands.has(a.id)) cls += ' cand';
     else if (cands) cls += ' dim';
-    return `<div class="${cls}" data-id="${seg.id}">
+    return `<div class="${cls}" data-id="${a.id}">
       <span class="ms-badge">${num}</span>
-      <span class="ms-name">${esc(nm)}${mergedTag}</span>
-      <span class="ms-len">${fmtLen(segLengthM(seg.coords))}</span></div>`;
+      <span class="ms-name">${esc(nm)}${reuse}</span>
+      <span class="ms-len">${fmtLen(segLengthM(a.coords))}</span></div>`;
   };
 
-  const items = getVisibleCorridors().filter(c => itemMatchesSearch(c));
-  const corrItems = items.filter(i => !i.isStandalone);
-  const saItems = items.filter(i => i.isStandalone);
-
+  // Group the atom feed by corridor code (+ a Standalone group); honour search.
+  const q = searchQuery.trim().toLowerCase();
+  let atoms = mergeAtoms;
+  if (q) atoms = atoms.filter(a => (a.name || '').toLowerCase().includes(q) || (a.cor_code || '').toLowerCase().includes(q));
+  const groups = new Map();
+  atoms.forEach(a => { const k = a.cor_code || ' sa'; (groups.get(k) || groups.set(k, []).get(k)).push(a); });
   let listHtml = '';
-  corrItems.forEach(g => {
-    listHtml += `<div class="merge-group-h">${esc(g.name || g.cor_code)}</div>` +
-      segmentsOfItem(g).map(rowHtml).join('');
-  });
-  if (saItems.length) {
-    listHtml += `<div class="merge-group-h">Standalone</div>` +
-      saItems.map(g => segmentsOfItem(g)).flat().map(rowHtml).join('');
+  for (const [k, arr] of groups) {
+    listHtml += `<div class="merge-group-h">${esc(k === ' sa' ? 'Standalone' : k)}</div>` + arr.map(rowHtml).join('');
   }
 
   const bannerTxt = ids.length < 2
     ? (ids.length ? 'Pick one more connected segment' : 'Click segments to merge (map or list)')
     : (v.ok ? '✓ ' + v.reason : '✗ ' + v.reason);
 
+  const title = extendContext ? `Extend · ${ids.length} selected` : `Merge · ${ids.length} selected`;
+  const saveArea = extendContext
+    ? `<input id="merge-name" type="text" placeholder="Name…" value="${esc(mergeName)}"/>
+       <div style="display:flex;gap:6px">
+         <button id="btn-modify-merge" ${v.ok ? '' : 'disabled'}>Modify this stretch</button>
+         <button id="btn-create-merge" ${v.ok ? '' : 'disabled'}>Create new stretch</button>
+       </div>`
+    : `<input id="merge-name" type="text" placeholder="Name (optional)…" value="${esc(mergeName)}"/>
+       <button id="btn-do-merge" ${v.ok ? '' : 'disabled'}>Merge ${ids.length || ''} → 1</button>`;
+
   container.innerHTML = `
     <div id="merge-controls">
-      <div class="mc-row"><strong>Merge</strong> · <span>${ids.length} selected</span>
+      <div class="mc-row"><strong>${esc(title)}</strong>
         <span style="flex:1"></span>
         <button id="btn-cancel-merge">Cancel</button></div>
       <div class="mc-banner ${v.ok ? 'mc-ok' : 'mc-bad'}">${esc(bannerTxt)}</div>
-      <input id="merge-name" type="text" placeholder="Name (optional)…" value="${esc(mergeName)}"/>
-      <button id="btn-do-merge" ${v.ok ? '' : 'disabled'}>Merge ${ids.length || ''} → 1</button>
+      ${saveArea}
     </div>
     ${listHtml}
   `;
@@ -1778,16 +1973,23 @@ function renderMergePanel() {
   container.querySelectorAll('.merge-seg-row').forEach(row =>
     row.addEventListener('click', () => toggleMergeSeg(Number(row.dataset.id))));
   document.getElementById('btn-cancel-merge').addEventListener('click', exitMergeMode);
-  document.getElementById('btn-do-merge').addEventListener('click', doMerge);
   document.getElementById('merge-name').addEventListener('input', e => { mergeName = e.target.value; });
+  const doBtn = document.getElementById('btn-do-merge');
+  if (doBtn) doBtn.addEventListener('click', () => doMerge(null));
+  const modBtn = document.getElementById('btn-modify-merge');
+  if (modBtn) modBtn.addEventListener('click', () => doMerge(extendContext.id));
+  const createBtn = document.getElementById('btn-create-merge');
+  if (createBtn) createBtn.addEventListener('click', () => doMerge(null));
 }
 
-async function doMerge() {
+async function doMerge(modifyId = null) {
   const ids = [...mergeSelection];
+  const body = { segment_ids: ids, name: mergeName };
+  if (modifyId) body.modify_id = modifyId;
   try {
     const res = await apiFetch(`/api/projects/${currentProjectId}/merge`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ segment_ids: ids, name: mergeName })
+      body: JSON.stringify(body)
     });
     exitMergeMode();
     projectData = await apiFetch(`/api/projects/${currentProjectId}`);
@@ -1957,6 +2159,7 @@ document.addEventListener('keydown', e => {
     if (ov && ov.classList.contains('show')) { closeModal(); return; }
     const box = document.getElementById('merge-chooser');
     if (box && box.style.display === 'block') { box.style.display = 'none'; clearMergeHighlight(); return; }
+    if (previewRootId) { closePreview(); return; }
     if (mergeMode) { exitMergeMode(); return; }
     deselectCorridor();
     return;
@@ -2039,6 +2242,7 @@ async function boot() {
   document.getElementById('btn-back').addEventListener('click', () => {
     // Flush any pending debounced saves before tearing down project state
     flushPendingSaves();
+    if (previewRootId) clearPreviewState();
     if (mergeMode) exitMergeMode();
     document.getElementById('btn-merge').style.display = 'none';
     // Return to home
@@ -2061,7 +2265,9 @@ async function boot() {
 
   document.getElementById('btn-next-unnamed').addEventListener('click', jumpToNextUnnamed);
   document.getElementById('btn-export').addEventListener('click', triggerExport);
-  document.getElementById('btn-merge').addEventListener('click', () => mergeMode ? exitMergeMode() : enterMergeMode());
+  document.getElementById('btn-merge').addEventListener('click', () => {
+    if (mergeMode) { exitMergeMode(); } else { extendContext = null; enterMergeMode(); }
+  });
 
   // Dismiss the overlap chooser when clicking outside it.
   document.addEventListener('click', e => {
@@ -2087,6 +2293,7 @@ async function boot() {
   const panelSearch = document.getElementById('panel-search');
   panelSearch.addEventListener('input', e => {
     searchQuery = e.target.value;
+    if (previewRootId) clearPreviewState();
     renderPanel();
   });
   const panelSearchClear = document.getElementById('panel-search-clear');

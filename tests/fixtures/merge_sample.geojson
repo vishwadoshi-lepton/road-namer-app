@@ -7,6 +7,8 @@
   "properties":{"uuid":"PA-S3","route_name":"Route A - Segment 3","parent_route_id":"PA","has_children":0,"sync_status":"synced","segment_order":3}},
  {"type":"Feature","geometry":{"type":"LineString","coordinates":[[91.13,25.13],[91.14,25.14]]},
   "properties":{"uuid":"SC","route_name":"Route C","parent_route_id":null,"has_children":0,"sync_status":"synced","segment_order":null}},
+ {"type":"Feature","geometry":{"type":"LineString","coordinates":[[91.14,25.14],[91.15,25.15]]},
+  "properties":{"uuid":"SD","route_name":"Route D","parent_route_id":null,"has_children":0,"sync_status":"synced","segment_order":null}},
  {"type":"Feature","geometry":{"type":"LineString","coordinates":[[91.20,25.20],[91.21,25.21]]},
   "properties":{"uuid":"SB1","route_name":"Route B 1","parent_route_id":null,"has_children":0,"sync_status":"synced","segment_order":null}},
  {"type":"Feature","geometry":{"type":"LineString","coordinates":[[91.21,25.21],[91.22,25.22]]},

@@ -215,3 +215,123 @@ def test_unmerge_one_level_recursive(tmp_path):
     assert r2.status_code == 200 and r2.json()["count"] == 3
     uuids = {s["uuid"] for s in c.get(f"/api/projects/{pid}").json()["segments"]}
     assert {"PA-S1", "PA-S2", "PA-S3"} <= uuids
+
+
+# ── Parts preview ──────────────────────────────────────────────────────
+def test_parts_of_whole_corridor_merge(tmp_path):
+    c = make_client(tmp_path)
+    pid = upload_merge(c).json()["project_id"]
+    ids = _ids_by_uuid(c, pid)
+    mid = c.post(f"/api/projects/{pid}/merge",
+                 json={"segment_ids": [ids["PA-S1"], ids["PA-S2"], ids["PA-S3"]], "name": "A"}
+                 ).json()["merged_segment_id"]
+    r = c.get(f"/api/segments/{mid}/parts")
+    assert r.status_code == 200
+    parts = r.json()["parts"]
+    assert [p["uuid"] for p in parts] == ["PA-S1", "PA-S2", "PA-S3"]   # chain order
+    assert all(p["is_merged"] is False for p in parts)
+    assert all("coords" in p and len(p["coords"]) >= 2 for p in parts)
+
+def test_parts_nested_and_drilldown(tmp_path):
+    c = make_client(tmp_path)
+    pid = upload_merge(c).json()["project_id"]
+    ids = _ids_by_uuid(c, pid)
+    m1 = c.post(f"/api/projects/{pid}/merge",
+                json={"segment_ids": [ids["PA-S1"], ids["PA-S2"], ids["PA-S3"]], "name": "A"}
+                ).json()["merged_segment_id"]
+    m2 = c.post(f"/api/projects/{pid}/merge",
+                json={"segment_ids": [m1, ids["SC"]], "name": "AC"}).json()["merged_segment_id"]
+    top = c.get(f"/api/segments/{m2}/parts").json()["parts"]
+    assert len(top) == 2
+    m1part = [p for p in top if p["id"] == m1][0]
+    assert m1part["is_merged"] is True and m1part["merged_count"] == 3
+    # drill into M1 (now soft-deleted) by its id
+    deep = c.get(f"/api/segments/{m1}/parts").json()["parts"]
+    assert [p["uuid"] for p in deep] == ["PA-S1", "PA-S2", "PA-S3"]
+
+def test_parts_rejects_non_merged(tmp_path):
+    c = make_client(tmp_path)
+    pid = upload_merge(c).json()["project_id"]
+    sid = _ids_by_uuid(c, pid)["SC"]
+    assert c.get(f"/api/segments/{sid}/parts").status_code == 400
+
+def test_parts_404_missing(tmp_path):
+    c = make_client(tmp_path)
+    upload_merge(c)
+    assert c.get(f"/api/segments/999999/parts").status_code == 404
+
+
+# ── Membership model: overlap / atoms / leaf_atoms / modify ─────────────
+def _atoms_by_uuid(client, pid):
+    return {a["uuid"]: a for a in client.get(f"/api/projects/{pid}/atoms").json()["atoms"]}
+
+def test_overlap_atom_in_two_merges(tmp_path):
+    c = make_client(tmp_path)
+    pid = upload_merge(c).json()["project_id"]
+    ids = _ids_by_uuid(c, pid)
+    m1 = c.post(f"/api/projects/{pid}/merge",
+                json={"segment_ids": [ids["PA-S1"], ids["PA-S2"], ids["PA-S3"]], "name": "A"}).json()
+    atoms = {u: a["id"] for u, a in _atoms_by_uuid(c, pid).items()}
+    m2 = c.post(f"/api/projects/{pid}/merge",
+                json={"segment_ids": [atoms["PA-S3"], atoms["SC"], atoms["SD"]], "name": "D"}).json()
+    assert m2.get("merged_segment_id")
+    exp = c.get(f"/api/projects/{pid}/export").json()
+    feats = {f["properties"]["uuid"]: f for f in exp["leaves"]["features"]}
+    assert m1["merged_uuid"] in feats and m2["merged_uuid"] in feats
+    assert feats[m1["merged_uuid"]]["properties"]["merged_from"] == ["PA-S1", "PA-S2", "PA-S3"]
+    assert feats[m2["merged_uuid"]]["properties"]["merged_from"] == ["PA-S3", "SC", "SD"]
+    p1 = c.get(f"/api/segments/{m1['merged_segment_id']}/parts").json()["parts"]
+    p2 = c.get(f"/api/segments/{m2['merged_segment_id']}/parts").json()["parts"]
+    assert "PA-S3" in [x["uuid"] for x in p1] and "PA-S3" in [x["uuid"] for x in p2]
+
+def test_atoms_feed_includes_hidden_with_counts(tmp_path):
+    c = make_client(tmp_path)
+    pid = upload_merge(c).json()["project_id"]
+    ids = _ids_by_uuid(c, pid)
+    m1 = c.post(f"/api/projects/{pid}/merge",
+                json={"segment_ids": [ids["PA-S1"], ids["PA-S2"], ids["PA-S3"]], "name": "A"}).json()
+    atoms = _atoms_by_uuid(c, pid)
+    assert "PA-S1" in atoms and atoms["PA-S1"]["in_merges"] == 1   # hidden but present
+    assert atoms["SC"]["in_merges"] == 0
+    assert m1["merged_uuid"] not in atoms                          # the merge itself is not an atom
+
+def test_unmerge_frees_only_unused(tmp_path):
+    c = make_client(tmp_path)
+    pid = upload_merge(c).json()["project_id"]
+    ids = _ids_by_uuid(c, pid)
+    m1 = c.post(f"/api/projects/{pid}/merge",
+                json={"segment_ids": [ids["PA-S1"], ids["PA-S2"], ids["PA-S3"]], "name": "A"}).json()["merged_segment_id"]
+    atoms = {u: a["id"] for u, a in _atoms_by_uuid(c, pid).items()}
+    c.post(f"/api/projects/{pid}/merge", json={"segment_ids": [atoms["PA-S3"], atoms["SC"], atoms["SD"]], "name": "D"})
+    c.post(f"/api/segments/{m1}/unmerge")
+    vis = {s["uuid"] for s in c.get(f"/api/projects/{pid}").json()["segments"]}
+    assert "PA-S1" in vis and "PA-S2" in vis    # freed
+    assert "PA-S3" not in vis                    # still in M2
+
+def test_leaf_atoms_flat_and_nested(tmp_path):
+    c = make_client(tmp_path)
+    pid = upload_merge(c).json()["project_id"]
+    ids = _ids_by_uuid(c, pid)
+    m1 = c.post(f"/api/projects/{pid}/merge",
+                json={"segment_ids": [ids["PA-S1"], ids["PA-S2"], ids["PA-S3"]], "name": "A"}).json()["merged_segment_id"]
+    la = c.get(f"/api/segments/{m1}/leaf_atoms").json()["atoms"]
+    assert [x["uuid"] for x in la] == ["PA-S1", "PA-S2", "PA-S3"]
+    m2 = c.post(f"/api/projects/{pid}/merge", json={"segment_ids": [m1, ids["SC"]], "name": "AC"}).json()["merged_segment_id"]
+    la2 = c.get(f"/api/segments/{m2}/leaf_atoms").json()["atoms"]
+    assert [x["uuid"] for x in la2] == ["PA-S1", "PA-S2", "PA-S3", "SC"]
+
+def test_modify_in_place(tmp_path):
+    c = make_client(tmp_path)
+    pid = upload_merge(c).json()["project_id"]
+    ids = _ids_by_uuid(c, pid)
+    m1 = c.post(f"/api/projects/{pid}/merge",
+                json={"segment_ids": [ids["PA-S2"], ids["PA-S3"]], "name": "A"}).json()
+    mid, muuid = m1["merged_segment_id"], m1["merged_uuid"]
+    atoms = {u: a["id"] for u, a in _atoms_by_uuid(c, pid).items()}
+    r = c.post(f"/api/projects/{pid}/merge",
+               json={"segment_ids": [atoms["PA-S1"], atoms["PA-S2"], atoms["PA-S3"]], "name": "A2", "modify_id": mid})
+    assert r.status_code == 200 and r.json()["merged_segment_id"] == mid
+    seg = [s for s in c.get(f"/api/projects/{pid}").json()["segments"] if s["id"] == mid][0]
+    assert seg["uuid"] == muuid and seg["name"] == "A2"
+    parts = c.get(f"/api/segments/{mid}/parts").json()["parts"]
+    assert [x["uuid"] for x in parts] == ["PA-S1", "PA-S2", "PA-S3"]
