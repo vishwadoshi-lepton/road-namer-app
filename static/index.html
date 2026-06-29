@@ -292,6 +292,10 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
           <div class="filter-chip" data-filter="unnamed">Unnamed <span id="count-unnamed">0</span></div>
           <div class="filter-chip" data-filter="named">Named <span id="count-named">0</span></div>
         </div>
+        <div id="search-bar" style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">
+          <input id="panel-search" type="text" placeholder="Search saved names…" autocomplete="off"
+                 style="width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:6px;padding:6px 9px;font-size:13px;outline:none;"/>
+        </div>
         <div id="corridor-list"></div>
       </div>
     </div>
@@ -312,6 +316,7 @@ let MAPS_KEY = '';               // captured at config load; used as X-Goog-Api-
 let projectData = null;          // full project response {project, corridors, segments}
 let currentProjectId = null;
 let activeFilter = 'all';        // 'all' | 'unnamed' | 'named'
+let searchQuery = '';            // panel search (matches saved names)
 let openCorrId = null;           // accordion: currently open corridor id (null = none)
 let selectedCorrId = null;       // map-selected corridor/standalone id
 let childPolylines = [];         // child segment polylines when a corridor is selected
@@ -536,6 +541,14 @@ function itemMatchesFilter(item) {
   if (activeFilter === 'named') return allNamed;
   if (activeFilter === 'unnamed') return !allNamed;
   return true;
+}
+
+// Search matches saved names only (corridor name or any child segment name).
+function itemMatchesSearch(item) {
+  const q = searchQuery.trim().toLowerCase();
+  if (!q) return true;
+  if (!item.isStandalone && (item.name || '').toLowerCase().includes(q)) return true;
+  return segmentsOfItem(item).some(s => (s.name || '').toLowerCase().includes(q));
 }
 
 // ── Colors ────────────────────────────────────────────────────────
@@ -1012,7 +1025,7 @@ function renderCorrList() {
   const container = document.getElementById('corridor-list');
   if (!projectData) { container.innerHTML = ''; return; }
 
-  const corrs = getVisibleCorridors().filter(c => itemMatchesFilter(c));
+  const corrs = getVisibleCorridors().filter(c => itemMatchesFilter(c) && itemMatchesSearch(c));
 
   if (!corrs.length) {
     container.innerHTML = '<div class="empty-state">No corridors match this filter.</div>';
@@ -1021,7 +1034,7 @@ function renderCorrList() {
 
   container.innerHTML = '';
   corrs.forEach(corr => {
-    const isOpen = corr.id === openCorrId;
+    const isOpen = corr.id === openCorrId || (!!searchQuery.trim() && !corr.isStandalone);
     const isSelected = corr.id === selectedCorrId;
     const segs = segmentsOfItem(corr);
     const unnamedCount = segs.filter(s => !s.named).length;
@@ -1576,6 +1589,11 @@ async function boot() {
 
   document.querySelectorAll('.filter-chip').forEach(chip => {
     chip.addEventListener('click', () => setFilter(chip.dataset.filter));
+  });
+
+  document.getElementById('panel-search').addEventListener('input', e => {
+    searchQuery = e.target.value;
+    renderCorrList();
   });
 }
 
