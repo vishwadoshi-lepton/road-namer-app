@@ -1038,7 +1038,11 @@ function renderCorrList() {
       <div class="corr-header">
         <div class="corr-dot" style="background:${dotColor}"></div>
         <div class="corr-info">
-          <div class="corr-code">${esc(isStandalone ? label : (corr.cor_code || label))}${isStandalone ? ' <em style="font-style:normal;font-weight:400;color:#94a3b8;font-size:11px">standalone</em>' : ''}</div>
+          <div class="corr-code">${esc(isStandalone ? label : (corr.name || corr.cor_code || label))}${
+            isStandalone
+              ? ' <em style="font-style:normal;font-weight:400;color:#94a3b8;font-size:11px">standalone</em>'
+              : (corr.name ? ` <em style="font-style:normal;font-weight:400;color:#94a3b8;font-size:11px">${esc(corr.cor_code)}</em>` : '')
+          }</div>
           <div class="corr-meta">${segs.length} seg${segs.length !== 1 ? 's' : ''} · ${unnamedCount} unnamed · ${fmtLen(itemLengthM(corr))}</div>
         </div>
         <span class="corr-chevron">▶</span>
