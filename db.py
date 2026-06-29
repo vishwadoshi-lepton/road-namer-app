@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS segments(
   geom TEXT, props TEXT,
   route_name_imported TEXT DEFAULT '', name TEXT DEFAULT '',
   sug_geocode TEXT DEFAULT '', sug_roads TEXT DEFAULT '', twin_uuid TEXT,
+  merged_into TEXT DEFAULT NULL,
   FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
   FOREIGN KEY(corridor_id) REFERENCES corridors(id) ON DELETE SET NULL);
 CREATE TABLE IF NOT EXISTS gcache(k TEXT PRIMARY KEY, v TEXT);
@@ -28,4 +29,8 @@ def connect(path):
 
 def init_db(conn):
     conn.executescript(SCHEMA_SQL)
+    # idempotent migration: add merged_into to DBs created before this column existed
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(segments)")}
+    if "merged_into" not in cols:
+        conn.execute("ALTER TABLE segments ADD COLUMN merged_into TEXT DEFAULT NULL")
     conn.commit()
