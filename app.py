@@ -35,6 +35,18 @@ def _point_at(coords, frac):
         acc += d
     return coords[-1]
 
+def _membership(c, pid):
+    """Return (member_set, members_of) for a project.
+
+    member_set: uuids that belong to >=1 merge (hidden from naming/count/export).
+    members_of: merge_uuid -> [member_uuid in seq order].
+    """
+    member_set = set(); members_of = {}
+    for r in c.execute("SELECT merge_uuid, member_uuid FROM merge_members WHERE project_id=? ORDER BY merge_uuid, seq", (pid,)):
+        members_of.setdefault(r["merge_uuid"], []).append(r["member_uuid"])
+        member_set.add(r["member_uuid"])
+    return member_set, members_of
+
 @app.post("/api/projects")
 async def create_project(file: UploadFile = File(...)):
     try:
@@ -76,8 +88,10 @@ async def create_project(file: UploadFile = File(...)):
 def list_projects():
     c = conn()
     rows = c.execute("""SELECT p.*,
-        (SELECT COUNT(*) FROM segments s WHERE s.project_id=p.id AND s.merged_into IS NULL) seg_count,
-        (SELECT COUNT(*) FROM segments s WHERE s.project_id=p.id AND s.merged_into IS NULL AND s.name<>'') named_count
+        (SELECT COUNT(*) FROM segments s WHERE s.project_id=p.id
+            AND s.uuid NOT IN (SELECT member_uuid FROM merge_members mm WHERE mm.project_id=p.id)) seg_count,
+        (SELECT COUNT(*) FROM segments s WHERE s.project_id=p.id AND s.name<>''
+            AND s.uuid NOT IN (SELECT member_uuid FROM merge_members mm WHERE mm.project_id=p.id)) named_count
         FROM projects p ORDER BY p.id DESC""").fetchall()
     out = [dict(r) for r in rows]; c.close(); return out
 
@@ -92,16 +106,20 @@ def get_project(pid: int):
     p = c.execute("SELECT * FROM projects WHERE id=?", (pid,)).fetchone()
     if not p:
         raise HTTPException(404, "no such project")
+    member_set, members_of = _membership(c, pid)
     name_by_uuid = {r["uuid"]: r["name"]
-                    for r in c.execute("SELECT uuid,name FROM segments WHERE project_id=? AND merged_into IS NULL", (pid,))}
+                    for r in c.execute("SELECT uuid,name FROM segments WHERE project_id=?", (pid,))
+                    if r["uuid"] not in member_set}
     corrs = [dict(r) for r in c.execute(
         "SELECT * FROM corridors WHERE project_id=? ORDER BY order_index,id", (pid,))]
     segs = []
-    for r in c.execute("SELECT * FROM segments WHERE project_id=? AND merged_into IS NULL ORDER BY corridor_id,seq", (pid,)):
+    for r in c.execute("SELECT * FROM segments WHERE project_id=? ORDER BY corridor_id,seq", (pid,)):
+        if r["uuid"] in member_set:
+            continue   # hidden: belongs to >=1 merge
         coords = json.loads(r["geom"])
         twin = r["twin_uuid"]
         twin_name = (name_by_uuid.get(twin) or None) if twin else None
-        mf = json.loads(r["props"] or "{}").get("merged_from")
+        mf = members_of.get(r["uuid"])
         segs.append({"id": r["id"], "uuid": r["uuid"], "corridor_id": r["corridor_id"],
                      "seq": r["seq"], "coords": coords, "mid": _point_at(coords, 0.5),
                      "route_name_imported": r["route_name_imported"], "name": r["name"],
@@ -133,17 +151,16 @@ def patch_corridor(cid: int, body: dict = Body(...)):
 def merge_segments(pid: int, body: dict = Body(...)):
     ids = body.get("segment_ids") or []
     name = (body.get("name") or "").strip()
+    modify_id = body.get("modify_id")
     if not isinstance(ids, list) or len(ids) < 2:
         raise HTTPException(400, "Select at least two segments to merge.")
     c = conn()
     try:
         rows = []
         for sid in ids:
-            r = c.execute(
-                "SELECT * FROM segments WHERE id=? AND project_id=? AND merged_into IS NULL",
-                (sid, pid)).fetchone()
+            r = c.execute("SELECT * FROM segments WHERE id=? AND project_id=?", (sid, pid)).fetchone()
             if not r:
-                raise HTTPException(400, f"Segment {sid} not found or already merged.")
+                raise HTTPException(400, f"Segment {sid} not found.")
             rows.append(dict(r))
         segs = [{"coords": json.loads(r["geom"]), "row": r} for r in rows]
         try:
@@ -152,26 +169,7 @@ def merge_segments(pid: int, body: dict = Body(...)):
             raise HTTPException(400, str(e))
         merged_coords = merge.merge_coords(ordered)
         ordered_rows = [o["row"] for o in ordered]
-
-        # Corridor placement: standalone unless every segment is in one corridor
-        # that still keeps other live segments after the merge.
-        corr_ids = {r["corridor_id"] for r in ordered_rows}
-        new_corr, new_seq = None, 0
-        if len(corr_ids) == 1 and next(iter(corr_ids)) is not None:
-            cid = next(iter(corr_ids))
-            ph = ",".join("?" * len(ids))
-            remaining = c.execute(
-                f"SELECT COUNT(*) n FROM segments WHERE corridor_id=? AND merged_into IS NULL "
-                f"AND id NOT IN ({ph})", (cid, *ids)).fetchone()["n"]
-            if remaining > 0:
-                new_corr = cid
-                new_seq = min(r["seq"] for r in ordered_rows)
-
-        # Props: copy first segment's props, drop stale ids, add provenance.
-        props = json.loads(ordered_rows[0]["props"] or "{}")
-        for k in ("parent_route_id", "segment_order", "uuid"):
-            props.pop(k, None)
-        props["merged_from"] = [r["uuid"] for r in ordered_rows]
+        member_uuids = [r["uuid"] for r in ordered_rows]
 
         # route_name_imported: distinct non-empty source names joined.
         seen, names = set(), []
@@ -181,6 +179,45 @@ def merge_segments(pid: int, body: dict = Body(...)):
                 seen.add(rn); names.append(rn)
         route_name_imported = " + ".join(names) if names else "Merged segment"
 
+        # ── Modify an existing road in place (Extend → "Modify this stretch") ──
+        if modify_id is not None:
+            tgt = c.execute("SELECT * FROM segments WHERE id=? AND project_id=?", (modify_id, pid)).fetchone()
+            if not tgt:
+                raise HTTPException(400, "modify target not found.")
+            if modify_id in ids:
+                raise HTTPException(400, "a road cannot contain itself.")
+            if not c.execute("SELECT 1 FROM merge_members WHERE merge_uuid=? AND project_id=? LIMIT 1",
+                             (tgt["uuid"], pid)).fetchone():
+                raise HTTPException(400, "modify target is not a merged road.")
+            c.execute("UPDATE segments SET geom=?, name=?, route_name_imported=? WHERE id=?",
+                      (json.dumps(merged_coords), name, route_name_imported, modify_id))
+            c.execute("DELETE FROM merge_members WHERE merge_uuid=? AND project_id=?", (tgt["uuid"], pid))
+            for seq, mu in enumerate(member_uuids):
+                c.execute("INSERT OR IGNORE INTO merge_members(project_id,merge_uuid,member_uuid,seq) VALUES(?,?,?,?)",
+                          (pid, tgt["uuid"], mu, seq))
+            c.commit()
+            return {"ok": True, "merged_segment_id": modify_id,
+                    "merged_uuid": tgt["uuid"], "corridor_id": tgt["corridor_id"]}
+
+        # ── Create a new road ──
+        member_set, _ = _membership(c, pid)
+        corr_ids = {r["corridor_id"] for r in ordered_rows}
+        new_corr, new_seq = None, 0
+        if len(corr_ids) == 1 and next(iter(corr_ids)) is not None:
+            cid = next(iter(corr_ids))
+            remaining = 0
+            for r in c.execute("SELECT id, uuid FROM segments WHERE corridor_id=? AND project_id=?", (cid, pid)):
+                if r["id"] not in ids and r["uuid"] not in member_set:
+                    remaining += 1
+            if remaining > 0:
+                new_corr = cid
+                new_seq = min(r["seq"] for r in ordered_rows)
+
+        # Props: copy first segment's props, drop stale/source-specific keys.
+        props = json.loads(ordered_rows[0]["props"] or "{}")
+        for k in ("parent_route_id", "segment_order", "uuid", "merged_from"):
+            props.pop(k, None)
+
         merged_uuid = str(uuidlib.uuid4())
         new_id = c.execute(
             """INSERT INTO segments(project_id,uuid,corridor_id,seq,geom,props,
@@ -188,9 +225,9 @@ def merge_segments(pid: int, body: dict = Body(...)):
                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
             (pid, merged_uuid, new_corr, new_seq, json.dumps(merged_coords),
              json.dumps(props), route_name_imported, name, "", "", None, None)).lastrowid
-
-        ph = ",".join("?" * len(ids))
-        c.execute(f"UPDATE segments SET merged_into=? WHERE id IN ({ph})", (merged_uuid, *ids))
+        for seq, mu in enumerate(member_uuids):
+            c.execute("INSERT OR IGNORE INTO merge_members(project_id,merge_uuid,member_uuid,seq) VALUES(?,?,?,?)",
+                      (pid, merged_uuid, mu, seq))
         c.commit()
     finally:
         c.close()
@@ -201,20 +238,29 @@ def merge_segments(pid: int, body: dict = Body(...)):
 def unmerge_segment(sid: int):
     c = conn()
     try:
-        r = c.execute("SELECT * FROM segments WHERE id=? AND merged_into IS NULL", (sid,)).fetchone()
+        r = c.execute("SELECT * FROM segments WHERE id=?", (sid,)).fetchone()
         if not r:
             raise HTTPException(404, "no such segment")
-        children = [dict(x) for x in c.execute(
-            "SELECT id FROM segments WHERE merged_into=? AND project_id=?", (r["uuid"], r["project_id"]))]
-        if not children:
+        pid = r["project_id"]
+        if c.execute("SELECT 1 FROM merge_members WHERE member_uuid=? AND project_id=? LIMIT 1", (r["uuid"], pid)).fetchone():
+            raise HTTPException(400, "Segment is part of another road; unmerge that first.")
+        members = [x["member_uuid"] for x in c.execute(
+            "SELECT member_uuid FROM merge_members WHERE merge_uuid=? AND project_id=? ORDER BY seq", (r["uuid"], pid))]
+        if not members:
             raise HTTPException(400, "Segment is not a merged segment.")
-        c.execute("UPDATE segments SET merged_into=NULL WHERE merged_into=? AND project_id=?",
-                  (r["uuid"], r["project_id"]))
+        c.execute("DELETE FROM merge_members WHERE merge_uuid=? AND project_id=?", (r["uuid"], pid))
         c.execute("DELETE FROM segments WHERE id=?", (sid,))
+        # Members that are no longer used by any merge become visible again.
+        freed = []
+        for mu in members:
+            if not c.execute("SELECT 1 FROM merge_members WHERE member_uuid=? AND project_id=? LIMIT 1", (mu, pid)).fetchone():
+                row = c.execute("SELECT id FROM segments WHERE uuid=? AND project_id=?", (mu, pid)).fetchone()
+                if row:
+                    freed.append(row["id"])
         c.commit()
     finally:
         c.close()
-    return {"ok": True, "restored_ids": [x["id"] for x in children], "count": len(children)}
+    return {"ok": True, "restored_ids": freed, "count": len(members)}
 
 @app.get("/api/segments/{sid}/parts")
 def segment_parts(sid: int):
@@ -223,22 +269,75 @@ def segment_parts(sid: int):
         r = c.execute("SELECT * FROM segments WHERE id=?", (sid,)).fetchone()
         if not r:
             raise HTTPException(404, "no such segment")
-        order = json.loads(r["props"] or "{}").get("merged_from") or []
-        if not order:
+        pid = r["project_id"]
+        member_uuids = [x["member_uuid"] for x in c.execute(
+            "SELECT member_uuid FROM merge_members WHERE merge_uuid=? AND project_id=? ORDER BY seq", (r["uuid"], pid))]
+        if not member_uuids:
             raise HTTPException(400, "Segment is not a merged segment.")
-        rows = [dict(x) for x in c.execute(
-            "SELECT * FROM segments WHERE merged_into=? AND project_id=?", (r["uuid"], r["project_id"]))]
+        _, members_of = _membership(c, pid)
+        parts = []
+        for mu in member_uuids:
+            x = c.execute("SELECT * FROM segments WHERE uuid=? AND project_id=?", (mu, pid)).fetchone()
+            if not x:
+                continue
+            mm = members_of.get(mu)
+            parts.append({"id": x["id"], "uuid": x["uuid"], "coords": json.loads(x["geom"]),
+                          "name": x["name"], "route_name_imported": x["route_name_imported"],
+                          "is_merged": bool(mm), "merged_count": len(mm) if mm else 0})
     finally:
         c.close()
-    rank = {u: i for i, u in enumerate(order)}
-    rows.sort(key=lambda x: rank.get(x["uuid"], len(order)))
-    parts = []
-    for x in rows:
-        mf = json.loads(x["props"] or "{}").get("merged_from")
-        parts.append({"id": x["id"], "uuid": x["uuid"], "coords": json.loads(x["geom"]),
-                      "name": x["name"], "route_name_imported": x["route_name_imported"],
-                      "is_merged": bool(mf), "merged_count": len(mf) if mf else 0})
     return {"parent_id": sid, "parts": parts}
+
+@app.get("/api/projects/{pid}/atoms")
+def project_atoms(pid: int):
+    """Every atomic segment (no members of its own), INCLUDING ones hidden inside a
+    merge, with how many merges each belongs to. This is Merge mode's selectable set."""
+    c = conn()
+    try:
+        merges = {r["merge_uuid"] for r in c.execute(
+            "SELECT DISTINCT merge_uuid FROM merge_members WHERE project_id=?", (pid,))}
+        incnt = {}
+        for r in c.execute("SELECT member_uuid, COUNT(*) n FROM merge_members WHERE project_id=? GROUP BY member_uuid", (pid,)):
+            incnt[r["member_uuid"]] = r["n"]
+        cor_code = {r["id"]: r["cor_code"] for r in c.execute("SELECT id, cor_code FROM corridors WHERE project_id=?", (pid,))}
+        atoms = []
+        for r in c.execute("SELECT * FROM segments WHERE project_id=? ORDER BY corridor_id, seq", (pid,)):
+            if r["uuid"] in merges:
+                continue   # it's a merge, not an atom
+            atoms.append({"id": r["id"], "uuid": r["uuid"], "coords": json.loads(r["geom"]),
+                          "name": r["name"], "route_name_imported": r["route_name_imported"],
+                          "corridor_id": r["corridor_id"], "cor_code": cor_code.get(r["corridor_id"]),
+                          "in_merges": incnt.get(r["uuid"], 0)})
+    finally:
+        c.close()
+    return {"atoms": atoms}
+
+@app.get("/api/segments/{sid}/leaf_atoms")
+def segment_leaf_atoms(sid: int):
+    """The road's flattened leaf atoms in order (recursively expands member merges)."""
+    c = conn()
+    try:
+        r = c.execute("SELECT * FROM segments WHERE id=?", (sid,)).fetchone()
+        if not r:
+            raise HTTPException(404, "no such segment")
+        pid = r["project_id"]
+        _, members_of = _membership(c, pid)
+        if r["uuid"] not in members_of:
+            raise HTTPException(400, "Segment is not a merged segment.")
+        out, seen = [], set()
+        def walk(u):
+            if u in members_of:
+                for m in members_of[u]:
+                    walk(m)
+            elif u not in seen:
+                seen.add(u)
+                row = c.execute("SELECT id, uuid FROM segments WHERE uuid=? AND project_id=?", (u, pid)).fetchone()
+                if row:
+                    out.append({"id": row["id"], "uuid": row["uuid"]})
+        walk(r["uuid"])
+    finally:
+        c.close()
+    return {"atoms": out}
 
 @app.get("/api/projects/{pid}/export")
 def export_project(pid: int):
@@ -247,7 +346,18 @@ def export_project(pid: int):
     if not p:
         raise HTTPException(404, "no such project")
     corrs = [dict(r) for r in c.execute("SELECT * FROM corridors WHERE project_id=?", (pid,))]
-    segs = [dict(r) for r in c.execute("SELECT * FROM segments WHERE project_id=? AND merged_into IS NULL ORDER BY corridor_id, seq", (pid,))]
+    member_set, members_of = _membership(c, pid)
+    segs = []
+    for r in c.execute("SELECT * FROM segments WHERE project_id=? ORDER BY corridor_id, seq", (pid,)):
+        if r["uuid"] in member_set:
+            continue   # hidden: belongs to >=1 merge
+        d = dict(r)
+        mf = members_of.get(r["uuid"])
+        if mf:   # carry provenance into the exported feature properties
+            props = json.loads(d["props"] or "{}")
+            props["merged_from"] = mf
+            d["props"] = json.dumps(props)
+        segs.append(d)
     c.close()
     payload = export.build_export(dict(p), corrs, segs)
     buf = io.BytesIO(json.dumps(payload, indent=2).encode())
