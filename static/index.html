@@ -59,6 +59,35 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 #merge-chooser { position:fixed; z-index:10000; background:#fff; border-radius:8px; box-shadow:0 2px 12px rgba(0,0,0,.25); overflow:hidden; display:none; min-width:180px; }
 #merge-chooser .mch-row { padding:8px 12px; font-size:12px; cursor:pointer; }
 #merge-chooser .mch-row:hover { background:#f5f3ff; }
+.merge-seg-row.cand { border-color:#ef4444; }
+.merge-seg-row.dim { opacity:.45; }
+
+/* Hint toast */
+#hint-toast { position:fixed; bottom:60px; left:50%; transform:translateX(-50%); z-index:10001;
+  background:#1a1a2e; color:#fff; padding:8px 16px; border-radius:8px; font-size:13px; opacity:0;
+  transition:opacity .2s; pointer-events:none; box-shadow:0 2px 10px rgba(0,0,0,.25); }
+#hint-toast.show { opacity:.96; }
+
+/* Shared modal */
+#app-modal-overlay { position:fixed; inset:0; background:rgba(15,19,32,.45); z-index:10002;
+  display:none; align-items:center; justify-content:center; }
+#app-modal-overlay.show { display:flex; }
+#app-modal { background:#fff; border-radius:12px; padding:18px 18px 16px; width:min(380px,92%);
+  box-shadow:0 10px 40px rgba(0,0,0,.3); }
+#app-modal h3 { font-size:15px; font-weight:700; margin-bottom:8px; }
+#app-modal p { font-size:13px; color:#475569; margin-bottom:12px; }
+#app-modal input { width:100%; box-sizing:border-box; border:1px solid #e2e8f0; border-radius:7px;
+  padding:8px 10px; font-size:13px; outline:none; margin-bottom:14px; }
+#app-modal input:focus { border-color:#4f7bbf; }
+#app-modal .modal-actions { display:flex; justify-content:flex-end; gap:8px; }
+#app-modal button { padding:7px 14px; border-radius:7px; font-size:13px; cursor:pointer; border:1px solid transparent; }
+#app-modal .m-cancel { background:#fff; color:#64748b; border-color:#e2e8f0; }
+#app-modal .m-confirm { background:#6d3fbf; color:#fff; }
+
+/* Merged badge + unmerge button on segment cards */
+.merged-tag { margin-left:6px; font-size:10px; font-weight:700; color:#6d3fbf; background:#f5f3ff; border:1px solid #d4c5f9; border-radius:10px; padding:1px 7px; }
+.unmerge-btn { margin-top:7px; padding:4px 10px; font-size:11px; border-radius:6px; border:1px solid #d4c5f9; background:#f5f3ff; color:#6d3fbf; cursor:pointer; }
+.unmerge-btn:hover { background:#ede9fe; }
 
 /* Body */
 #body { display: flex; flex: 1; min-height: 0; }
@@ -330,6 +359,8 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 
 <div id="map-tooltip"></div>
 <div id="merge-chooser"></div>
+<div id="hint-toast"></div>
+<div id="app-modal-overlay"><div id="app-modal"></div></div>
 <div id="save-indicator">Saved ✓</div>
 
 <script>
@@ -1126,7 +1157,7 @@ function renderCorrList() {
           });
         }
       }
-      const useSugBtn = row.querySelector('.use-sug');
+      const useSugBtn = row.querySelector('.use-sug:not(.quick-merge-btn)');
       if (useSugBtn) {
         useSugBtn.addEventListener('click', () => {
           const sug = corrSuggestion(corr);
@@ -1136,6 +1167,8 @@ function renderCorrList() {
           }
         });
       }
+      const quickBtn = row.querySelector('.quick-merge-btn');
+      if (quickBtn) quickBtn.addEventListener('click', (e) => { e.stopPropagation(); openQuickMergeModal(corr); });
     }
 
     // Wire up segment cards
@@ -1158,6 +1191,8 @@ function buildCorrBody(corr, segs) {
   }
   const sug = corrSuggestion(corr);
   const corrNameVal = corr.name || '';
+  const quick = corridorChainable(corr)
+    ? `<button class="use-sug quick-merge-btn" title="Merge whole corridor into one segment">⤳ Quick-merge</button>` : '';
   return `
     <div class="corr-name-editor">
       <div class="input-wrap" style="flex:1">
@@ -1165,6 +1200,7 @@ function buildCorrBody(corr, segs) {
         <button class="clear-input" title="Clear" tabindex="-1">×</button>
       </div>
       ${sug ? `<button class="use-sug" title="${esc(sug)}">Use: ${esc(sug.length > 20 ? sug.slice(0,20) + '…' : sug)}</button>` : ''}
+      ${quick}
     </div>
     <div class="seg-cards">
       ${segs.map((seg, idx) => buildSegCard(seg, idx)).join('')}
@@ -1178,9 +1214,11 @@ function buildSegCard(seg, idx) {
   const chips = buildChips(seg);
   const badgeNum = (typeof idx === 'number') ? idx + 1 : '';
   const badgeHtml = badgeNum ? `<span class="seg-badge">${badgeNum}</span>` : '';
+  const mergedTag = seg.is_merged ? `<span class="merged-tag">merged (${seg.merged_from.length})</span>` : '';
+  const unmergeBtn = seg.is_merged ? `<button class="unmerge-btn" data-seg-id="${seg.id}">Unmerge</button>` : '';
   return `
     <div class="seg-card${named ? ' named' : ''}" id="seg-card-${seg.id}">
-      <div class="seg-ref">${badgeHtml}${esc(seg.route_name_imported || '')}<span class="seg-len">${fmtLen(segLengthM(seg.coords))}</span></div>
+      <div class="seg-ref">${badgeHtml}${esc(seg.route_name_imported || '')}${mergedTag}<span class="seg-len">${fmtLen(segLengthM(seg.coords))}</span></div>
       <div class="input-wrap">
         <input
           class="seg-name-input${named ? ' named' : ''}"
@@ -1193,6 +1231,7 @@ function buildSegCard(seg, idx) {
         <button class="clear-input" title="Clear" tabindex="-1">×</button>
       </div>
       <div class="seg-chips">${chips}</div>
+      ${unmergeBtn}
     </div>
   `;
 }
@@ -1265,11 +1304,32 @@ function wireSegCard(rowEl, seg, corrId) {
     });
   });
 
+  // Unmerge button (only present on merged segments)
+  const unmergeBtn = card.querySelector('.unmerge-btn');
+  if (unmergeBtn) unmergeBtn.addEventListener('click', (e) => { e.stopPropagation(); unmergeSegment(seg); });
+
   // Map↔panel hover sync
   card.addEventListener('mouseenter', () => setSegHover(seg.id, true));
   card.addEventListener('mouseleave', () => setSegHover(seg.id, false));
   // Click the card (or its input/chips) → select this segment, synced to the map
   card.addEventListener('click', () => setSegFocus(seg.id));
+}
+
+async function unmergeSegment(seg) {
+  const n = (seg.merged_from || []).length;
+  showModal({
+    title: 'Unmerge segment',
+    message: `Unmerge into ${n} segment${n !== 1 ? 's' : ''}?`,
+    confirmText: 'Unmerge',
+    onConfirm: async () => {
+      try {
+        await apiFetch(`/api/segments/${seg.id}/unmerge`, { method: 'POST' });
+        projectData = await apiFetch(`/api/projects/${currentProjectId}`);
+        updateProgressUI(); renderCorrList(); renderMap();
+        showSaveIndicator();
+      } catch (err) { alert('Unmerge failed: ' + err.message); }
+    }
+  });
 }
 
 // ── Flush pending debounced saves ─────────────────────────────────
@@ -1402,6 +1462,44 @@ function jumpToNextUnnamed() {
   alert('All segments are named! 🎉');
 }
 
+// ── Shared modal + hint toast ──────────────────────────────────────
+let _hintTimer = null;
+function showHint(msg) {
+  const t = document.getElementById('hint-toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(_hintTimer);
+  _hintTimer = setTimeout(() => t.classList.remove('show'), 1600);
+}
+
+function closeModal() {
+  document.getElementById('app-modal-overlay').classList.remove('show');
+  document.getElementById('app-modal').innerHTML = '';
+}
+function showModal({ title, message = '', withInput = false, inputValue = '', confirmText = 'Confirm', onConfirm }) {
+  const m = document.getElementById('app-modal');
+  m.innerHTML = `
+    <h3>${esc(title)}</h3>
+    ${message ? `<p>${esc(message)}</p>` : ''}
+    ${withInput ? `<input id="modal-input" type="text" value="${esc(inputValue)}" placeholder="Name…"/>` : ''}
+    <div class="modal-actions">
+      <button class="m-cancel">Cancel</button>
+      <button class="m-confirm">${esc(confirmText)}</button>
+    </div>`;
+  document.getElementById('app-modal-overlay').classList.add('show');
+  const input = document.getElementById('modal-input');
+  if (input) { input.focus(); input.select(); }
+  m.querySelector('.m-cancel').addEventListener('click', closeModal);
+  m.querySelector('.m-confirm').addEventListener('click', () => {
+    const val = input ? input.value : undefined;
+    closeModal();
+    if (onConfirm) onConfirm(val);
+  });
+  if (input) input.addEventListener('keydown', e => { if (e.key === 'Enter') m.querySelector('.m-confirm').click(); });
+}
+
+// Render whichever panel list is active (normal corridor list vs merge list).
+function renderPanel() { if (mergeMode) renderMergePanel(); else renderCorrList(); }
+
 // ── Merge mode ─────────────────────────────────────────────────────
 function liveSegments() { return projectData ? projectData.segments : []; }
 
@@ -1437,6 +1535,7 @@ function enterMergeMode() {
   selectedCorrId = null; openCorrId = null;
   const btn = document.getElementById('btn-merge');
   btn.classList.add('active'); btn.textContent = 'Exit merge';
+  document.getElementById('filter-bar').style.display = 'none';
   renderMergeMap();
   renderMergePanel();
 }
@@ -1449,12 +1548,52 @@ function exitMergeMode() {
   document.getElementById('merge-chooser').style.display = 'none';
   const btn = document.getElementById('btn-merge');
   btn.classList.remove('active'); btn.textContent = 'Merge';
+  document.getElementById('filter-bar').style.display = 'flex';
   renderMap();
   renderCorrList();
 }
 
+// The current selection in chain order (trivial for 0/1, validated for 2+).
+function orderedSelectionSegs() {
+  const ids = [...mergeSelection];
+  if (ids.length === 0) return [];
+  if (ids.length === 1) { const s = projectData.segments.find(x => x.id === ids[0]); return s ? [s] : []; }
+  const v = validateChain(ids);
+  const order = v.ok ? v.order : ids;
+  return order.map(id => projectData.segments.find(s => s.id === id)).filter(Boolean);
+}
+
+// Set of live segment ids that may be ADDED next (connect to head or tail,
+// without closing a loop). When nothing is selected, anything can start a chain.
+function mergeCandidates() {
+  const segs = liveSegments();
+  if (mergeSelection.size === 0) return new Set(segs.map(s => s.id));
+  const order = orderedSelectionSegs();
+  if (!order.length) return new Set();
+  const head = order[0].coords[0];
+  const tail = order[order.length - 1].coords[order[order.length - 1].coords.length - 1];
+  const cand = new Set();
+  segs.forEach(s => {
+    if (mergeSelection.has(s.id)) return;
+    const st = s.coords[0], en = s.coords[s.coords.length - 1];
+    const appendOK = near2(st, tail) && !near2(en, head);
+    const prependOK = near2(en, head) && !near2(st, tail);
+    if (appendOK || prependOK) cand.add(s.id);
+  });
+  return cand;
+}
+
+// Guarded toggle: add only a connecting candidate; remove only from the two ends.
 function toggleMergeSeg(id) {
-  if (mergeSelection.has(id)) mergeSelection.delete(id); else mergeSelection.add(id);
+  if (mergeSelection.has(id)) {
+    const order = orderedSelectionSegs();
+    const isEnd = order.length && (id === order[0].id || id === order[order.length - 1].id);
+    if (!isEnd) { showHint('You can only remove from the ends'); return; }
+    mergeSelection.delete(id);
+  } else {
+    if (!mergeCandidates().has(id)) { showHint("That segment doesn't connect to your selection"); return; }
+    mergeSelection.add(id);
+  }
   // Auto pre-fill the name when the selected segments share one saved name.
   if (!mergeName) {
     const names = [...new Set([...mergeSelection]
@@ -1479,33 +1618,47 @@ function renderMergeMap() {
   clearChildPolylines();
   clearMergeOverlay();
 
+  const cands = mergeSelection.size ? mergeCandidates() : null;
   liveSegments().forEach(seg => {
     const path = lngLatToGM(seg.coords);
     if (path.length < 2) return;
-    const sel = mergeSelection.has(seg.id);
+    const isSel = mergeSelection.has(seg.id);
+    let color, weight, opacity;
+    if (isSel) { color = '#2563eb'; weight = 8; opacity = 1; }                                 // selected = blue
+    else if (mergeSelection.size === 0) { color = seg.named ? COLOR_NAMED : COLOR_UNNAMED; weight = 6; opacity = 1; }
+    else if (cands.has(seg.id)) { color = '#ef4444'; weight = 7; opacity = 1; }                // connectable = red
+    else { color = '#cbd5e1'; weight = 5; opacity = 0.5; }                                     // ineligible = dimmed
     const pl = new google.maps.Polyline({
-      path, map: googleMap,
-      strokeColor: sel ? '#6d3fbf' : (seg.named ? COLOR_NAMED : COLOR_UNNAMED),
-      strokeWeight: sel ? 8 : 6, strokeOpacity: 1, zIndex: sel ? 5 : 2
+      path, map: googleMap, strokeColor: color, strokeWeight: weight, strokeOpacity: opacity,
+      zIndex: isSel ? 5 : (color === '#ef4444' ? 4 : 2)
     });
     pl.addListener('click', (e) => onMergeMapClick(seg.id, e));
     mergeOverlayPolylines.push(pl);
-    if (sel) {
+    if (isSel) {
       const a = path[path.length - 2], b = path[path.length - 1];
       const arrow = new google.maps.Marker({ position: b, map: googleMap, clickable: false, zIndex: 6,
         icon: { path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW, scale: 3.5,
-                rotation: headingDeg(a, b), fillColor: '#6d3fbf', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 1 } });
+                rotation: headingDeg(a, b), fillColor: '#2563eb', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 1 } });
       mergeOverlayPolylines.push(arrow);
     }
   });
 }
 
-// On a polyline click, find ALL live segments whose geometry passes near the
-// click point; if >1 (overlapping twins), show the chooser, else toggle directly.
+// On a polyline click, find ALL live segments under the cursor, then keep only the
+// ACTIONABLE ones (a connectable candidate, or one of the two removable end segments).
+// 0 -> hint; exactly 1 -> do it silently; 2+ -> show the chooser to disambiguate.
 function onMergeMapClick(segId, e) {
-  const candidates = liveSegments().filter(s => segmentNearLatLng(s, e.latLng));
-  if (candidates.length <= 1) { toggleMergeSeg(segId); return; }
-  showMergeChooser(candidates, e);
+  const under = liveSegments().filter(s => segmentNearLatLng(s, e.latLng));
+  const cands = mergeCandidates();
+  const order = orderedSelectionSegs();
+  const endIds = order.length ? [order[0].id, order[order.length - 1].id] : [];
+  const actionable = under.filter(s => cands.has(s.id) || endIds.includes(s.id));
+  if (actionable.length === 0) {
+    showHint(under.length ? "That segment doesn't connect to your selection" : 'No segment here');
+    return;
+  }
+  if (actionable.length === 1) { toggleMergeSeg(actionable[0].id); return; }
+  showMergeChooser(actionable, e);
 }
 
 function segmentNearLatLng(seg, latLng) {
@@ -1571,15 +1724,21 @@ function renderMergePanel() {
   if (!projectData) { container.innerHTML = ''; return; }
   const ids = [...mergeSelection];
   const v = validateChain(ids);
-  const orderIndex = {}; v.order.forEach((id, i) => orderIndex[id] = i + 1);
+  const orderIndex = {}; orderedSelectionSegs().forEach((s, i) => orderIndex[s.id] = i + 1);
+  const cands = mergeSelection.size ? mergeCandidates() : null;
 
   const rowHtml = (seg) => {
     const sel = mergeSelection.has(seg.id);
     const num = orderIndex[seg.id] || '';
     const nm = seg.name || seg.route_name_imported || ('Segment ' + seg.id);
-    return `<div class="merge-seg-row${sel ? ' sel' : ''}" data-id="${seg.id}">
+    const mergedTag = seg.is_merged ? ` <span class="merged-tag">merged (${seg.merged_from.length})</span>` : '';
+    let cls = 'merge-seg-row';
+    if (sel) cls += ' sel';
+    else if (cands && cands.has(seg.id)) cls += ' cand';
+    else if (cands) cls += ' dim';
+    return `<div class="${cls}" data-id="${seg.id}">
       <span class="ms-badge">${num}</span>
-      <span class="ms-name">${esc(nm)}</span>
+      <span class="ms-name">${esc(nm)}${mergedTag}</span>
       <span class="ms-len">${fmtLen(segLengthM(seg.coords))}</span></div>`;
   };
 
@@ -1640,6 +1799,39 @@ async function doMerge() {
   } catch (err) {
     alert('Merge failed: ' + err.message);
   }
+}
+
+// ── Quick merge (whole corridor → one standalone segment) ──────────
+function corridorChainable(corr) {
+  if (corr.isStandalone) return false;
+  const segs = segmentsOfCorridor(corr.id);
+  if (segs.length < 2) return false;
+  return validateChain(segs.map(s => s.id)).ok;
+}
+
+function openQuickMergeModal(corr) {
+  const segs = segmentsOfCorridor(corr.id);
+  const prefill = corr.name || corrSuggestion(corr) || '';
+  showModal({
+    title: 'Quick-merge corridor',
+    message: `Merge all ${segs.length} segments of this corridor into one standalone segment?`,
+    withInput: true, inputValue: prefill, confirmText: 'Merge',
+    onConfirm: (name) => quickMerge(corr, name)
+  });
+}
+
+async function quickMerge(corr, name) {
+  const ids = segmentsOfCorridor(corr.id).map(s => s.id);
+  try {
+    const res = await apiFetch(`/api/projects/${currentProjectId}/merge`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ segment_ids: ids, name: name || '' })
+    });
+    projectData = await apiFetch(`/api/projects/${currentProjectId}`);
+    updateProgressUI(); renderCorrList(); renderMap();
+    if (res.merged_segment_id) selectCorridor('sa_' + res.merged_segment_id, 'merge');
+    showSaveIndicator();
+  } catch (err) { alert('Quick merge failed: ' + err.message); }
 }
 
 // ── Home / project list ───────────────────────────────────────────
@@ -1758,6 +1950,8 @@ function setFilter(f) {
 // ── Keyboard ──────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
+    const ov = document.getElementById('app-modal-overlay');
+    if (ov && ov.classList.contains('show')) { closeModal(); return; }
     const box = document.getElementById('merge-chooser');
     if (box && box.style.display === 'block') { box.style.display = 'none'; clearMergeHighlight(); return; }
     if (mergeMode) { exitMergeMode(); return; }
@@ -1874,6 +2068,11 @@ async function boot() {
     }
   });
 
+  // Close the modal when clicking the dimmed overlay.
+  document.getElementById('app-modal-overlay').addEventListener('click', e => {
+    if (e.target.id === 'app-modal-overlay') closeModal();
+  });
+
   document.getElementById('file-input').addEventListener('change', e => {
     if (e.target.files[0]) handleImport(e.target.files[0]);
   });
@@ -1884,7 +2083,7 @@ async function boot() {
 
   document.getElementById('panel-search').addEventListener('input', e => {
     searchQuery = e.target.value;
-    renderCorrList();
+    renderPanel();
   });
 }
 
