@@ -156,3 +156,62 @@ def test_list_projects_counts_ignore_merged(tmp_path):
     c.post(f"/api/projects/{pid}/merge", json={"segment_ids": [ids["SB1"], ids["SB2"]]})
     after = [p for p in c.get("/api/projects").json() if p["id"] == pid][0]["seg_count"]
     assert after == before - 1     # 2 merged away, 1 new
+
+
+# ── Unmerge ────────────────────────────────────────────────────────────
+def test_get_project_exposes_is_merged(tmp_path):
+    c = make_client(tmp_path)
+    pid = upload_merge(c).json()["project_id"]
+    ids = _ids_by_uuid(c, pid)
+    mid = c.post(f"/api/projects/{pid}/merge",
+                 json={"segment_ids": [ids["SB1"], ids["SB2"]]}).json()["merged_segment_id"]
+    segs = {s["id"]: s for s in c.get(f"/api/projects/{pid}").json()["segments"]}
+    assert segs[mid]["is_merged"] is True
+    assert segs[mid]["merged_from"] == ["SB1", "SB2"]
+    other = [s for s in segs.values() if s["uuid"] == "SC"][0]
+    assert other["is_merged"] is False and other["merged_from"] is None
+
+def test_unmerge_rejects_non_merged(tmp_path):
+    c = make_client(tmp_path)
+    pid = upload_merge(c).json()["project_id"]
+    sid = _ids_by_uuid(c, pid)["SC"]
+    assert c.post(f"/api/segments/{sid}/unmerge").status_code == 400
+
+def test_unmerge_revives_collapsed_corridor(tmp_path):
+    c = make_client(tmp_path)
+    pid = upload_merge(c).json()["project_id"]
+    ids = _ids_by_uuid(c, pid)
+    mid = c.post(f"/api/projects/{pid}/merge",
+                 json={"segment_ids": [ids["PA-S1"], ids["PA-S2"], ids["PA-S3"]], "name": "A"}
+                 ).json()["merged_segment_id"]
+    assert all(co["cor_code"] != "cor_001" for co in c.get(f"/api/projects/{pid}").json()["corridors"])
+    r = c.post(f"/api/segments/{mid}/unmerge")
+    assert r.status_code == 200 and r.json()["count"] == 3
+    full = c.get(f"/api/projects/{pid}").json()
+    uuids = {s["uuid"] for s in full["segments"]}
+    assert {"PA-S1", "PA-S2", "PA-S3"} <= uuids
+    assert any(co["cor_code"] == "cor_001" for co in full["corridors"])   # corridor back
+    assert all(s["id"] != mid for s in full["segments"])                  # M gone
+
+def test_unmerge_one_level_recursive(tmp_path):
+    c = make_client(tmp_path)
+    pid = upload_merge(c).json()["project_id"]
+    ids = _ids_by_uuid(c, pid)
+    m1 = c.post(f"/api/projects/{pid}/merge",
+                json={"segment_ids": [ids["PA-S1"], ids["PA-S2"], ids["PA-S3"]], "name": "A"}
+                ).json()["merged_segment_id"]
+    sc = ids["SC"]   # SC starts where the M1 chain ends -> connects
+    m2 = c.post(f"/api/projects/{pid}/merge",
+                json={"segment_ids": [m1, sc], "name": "AC"}).json()["merged_segment_id"]
+    # unmerge M2 -> M1 (still merged) + SC live
+    r = c.post(f"/api/segments/{m2}/unmerge")
+    assert r.status_code == 200 and r.json()["count"] == 2
+    segs = {s["id"]: s for s in c.get(f"/api/projects/{pid}").json()["segments"]}
+    assert m1 in segs and segs[m1]["is_merged"] is True
+    assert any(s["uuid"] == "SC" for s in segs.values())
+    assert m2 not in segs
+    # unmerge M1 -> the three originals
+    r2 = c.post(f"/api/segments/{m1}/unmerge")
+    assert r2.status_code == 200 and r2.json()["count"] == 3
+    uuids = {s["uuid"] for s in c.get(f"/api/projects/{pid}").json()["segments"]}
+    assert {"PA-S1", "PA-S2", "PA-S3"} <= uuids

@@ -101,12 +101,14 @@ def get_project(pid: int):
         coords = json.loads(r["geom"])
         twin = r["twin_uuid"]
         twin_name = (name_by_uuid.get(twin) or None) if twin else None
+        mf = json.loads(r["props"] or "{}").get("merged_from")
         segs.append({"id": r["id"], "uuid": r["uuid"], "corridor_id": r["corridor_id"],
                      "seq": r["seq"], "coords": coords, "mid": _point_at(coords, 0.5),
                      "route_name_imported": r["route_name_imported"], "name": r["name"],
                      "named": r["name"] != "", "sug_geocode": r["sug_geocode"],
                      "sug_roads": r["sug_roads"], "twin_uuid": twin,
-                     "twin_name": twin_name if twin_name else None})
+                     "twin_name": twin_name if twin_name else None,
+                     "merged_from": mf if mf else None, "is_merged": bool(mf)})
     c.close()
     # Hide corridors that have no live segments left (e.g. fully merged away).
     live_corr_ids = {s["corridor_id"] for s in segs if s["corridor_id"] is not None}
@@ -194,6 +196,25 @@ def merge_segments(pid: int, body: dict = Body(...)):
         c.close()
     return {"ok": True, "merged_segment_id": new_id,
             "merged_uuid": merged_uuid, "corridor_id": new_corr}
+
+@app.post("/api/segments/{sid}/unmerge")
+def unmerge_segment(sid: int):
+    c = conn()
+    try:
+        r = c.execute("SELECT * FROM segments WHERE id=? AND merged_into IS NULL", (sid,)).fetchone()
+        if not r:
+            raise HTTPException(404, "no such segment")
+        children = [dict(x) for x in c.execute(
+            "SELECT id FROM segments WHERE merged_into=? AND project_id=?", (r["uuid"], r["project_id"]))]
+        if not children:
+            raise HTTPException(400, "Segment is not a merged segment.")
+        c.execute("UPDATE segments SET merged_into=NULL WHERE merged_into=? AND project_id=?",
+                  (r["uuid"], r["project_id"]))
+        c.execute("DELETE FROM segments WHERE id=?", (sid,))
+        c.commit()
+    finally:
+        c.close()
+    return {"ok": True, "restored_ids": [x["id"] for x in children], "count": len(children)}
 
 @app.get("/api/projects/{pid}/export")
 def export_project(pid: int):
