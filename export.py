@@ -16,6 +16,6 @@ def build_export(project, corridors, segments):
     corridors_out = [{"id": cor_by_id[cid]["cor_code"],
                       "name": cor_by_id[cid]["name"],
                       "segment_uuids": uuids}
-                     for cid, uuids in cor_segs.items()]
+                     for cid, uuids in cor_segs.items() if uuids]
     return {"leaves": {"type": "FeatureCollection", "features": features},
             "corridors": corridors_out}
