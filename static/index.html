@@ -348,8 +348,11 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
           <div class="filter-chip" data-filter="named">Named <span id="count-named">0</span></div>
         </div>
         <div id="search-bar" style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">
-          <input id="panel-search" type="text" placeholder="Search saved names…" autocomplete="off"
-                 style="width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:6px;padding:6px 9px;font-size:13px;outline:none;"/>
+          <div class="input-wrap" style="margin-bottom:0">
+            <input id="panel-search" type="text" placeholder="Search saved names…" autocomplete="off"
+                   style="width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:6px;padding:6px 30px 6px 9px;font-size:13px;outline:none;"/>
+            <button class="clear-input" id="panel-search-clear" title="Clear" tabindex="-1">×</button>
+          </div>
         </div>
         <div id="corridor-list"></div>
       </div>
@@ -2081,9 +2084,18 @@ async function boot() {
     chip.addEventListener('click', () => setFilter(chip.dataset.filter));
   });
 
-  document.getElementById('panel-search').addEventListener('input', e => {
+  const panelSearch = document.getElementById('panel-search');
+  panelSearch.addEventListener('input', e => {
     searchQuery = e.target.value;
     renderPanel();
+  });
+  const panelSearchClear = document.getElementById('panel-search-clear');
+  panelSearchClear.addEventListener('mousedown', e => e.preventDefault()); // keep focus
+  panelSearchClear.addEventListener('click', () => {
+    panelSearch.value = '';
+    searchQuery = '';
+    renderPanel();
+    panelSearch.focus();
   });
 }
 
