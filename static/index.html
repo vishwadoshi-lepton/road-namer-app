@@ -34,6 +34,31 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 }
 #btn-export:hover { background: #eef3fb; }
 #btn-export:disabled { opacity: 0.4; cursor: default; }
+#btn-merge { padding: 6px 14px; background:#fff; color:#6d3fbf; border:1.5px solid #c4b5fd; border-radius:6px; font-size:13px; cursor:pointer; white-space:nowrap; font-weight:500; }
+#btn-merge:hover { background:#f5f3ff; }
+#btn-merge.active { background:#6d3fbf; color:#fff; border-color:#6d3fbf; }
+
+/* Merge mode panel */
+#merge-controls { padding:10px 12px; border-bottom:1px solid #e2e8f0; background:#faf9ff; position:sticky; top:0; z-index:2; }
+#merge-controls .mc-row { display:flex; align-items:center; gap:8px; }
+#merge-controls .mc-banner { font-size:12px; margin:6px 0; }
+#merge-controls .mc-ok { color:#15803d; }
+#merge-controls .mc-bad { color:#b91c1c; }
+#merge-controls input { width:100%; box-sizing:border-box; border:1px solid #e2e8f0; border-radius:6px; padding:6px 9px; font-size:13px; outline:none; margin:6px 0; }
+#merge-controls button { padding:6px 12px; border-radius:6px; font-size:13px; cursor:pointer; border:1px solid transparent; }
+#btn-do-merge { background:#6d3fbf; color:#fff; width:100%; }
+#btn-do-merge:disabled { opacity:.4; cursor:default; }
+#btn-cancel-merge { background:#fff; color:#64748b; border-color:#e2e8f0; }
+.merge-group-h { font-size:11px; font-weight:700; color:#64748b; padding:8px 6px 2px; }
+.merge-seg-row { display:flex; align-items:center; gap:8px; border:1px solid #e2e8f0; border-radius:7px; padding:8px 10px; margin:4px 6px; cursor:pointer; }
+.merge-seg-row.sel { border-color:#6d3fbf; background:#f5f3ff; }
+.merge-seg-row .ms-badge { width:20px;height:20px;border-radius:50%;background:#6d3fbf;color:#fff;font-size:11px;font-weight:700;display:none;align-items:center;justify-content:center;flex-shrink:0; }
+.merge-seg-row.sel .ms-badge { display:inline-flex; }
+.merge-seg-row .ms-name { flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.merge-seg-row .ms-len { color:#94a3b8;font-size:11px;flex-shrink:0; }
+#merge-chooser { position:fixed; z-index:10000; background:#fff; border-radius:8px; box-shadow:0 2px 12px rgba(0,0,0,.25); overflow:hidden; display:none; min-width:180px; }
+#merge-chooser .mch-row { padding:8px 12px; font-size:12px; cursor:pointer; }
+#merge-chooser .mch-row:hover { background:#f5f3ff; }
 
 /* Body */
 #body { display: flex; flex: 1; min-height: 0; }
@@ -244,6 +269,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
     </div>
     <div style="flex:1"></div>
     <button id="btn-next-unnamed" style="display:none">Next unnamed →</button>
+    <button id="btn-merge" style="display:none">Merge</button>
     <button id="btn-export" disabled>Export</button>
   </div>
 
@@ -303,6 +329,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Sego
 </div>
 
 <div id="map-tooltip"></div>
+<div id="merge-chooser"></div>
 <div id="save-indicator">Saved ✓</div>
 
 <script>
@@ -328,6 +355,13 @@ let mapsLoaded = false;
 let segPolylines = {};           // segId -> { core: Polyline, casing: Polyline|null }
 let hoveredSegId = null;
 let focusedSegId = null;         // the currently "focused" segment (named state, selected for editing)
+
+// ── Merge mode state ───────────────────────────────────────────────
+let mergeMode = false;
+let mergeSelection = new Set();    // selected segment ids
+let mergeName = '';                // merged-segment name (pre-filled / user-edited)
+let mergeOverlayPolylines = [];    // all live-segment polylines drawn in merge mode
+let mergeHighlight = [];           // transient highlight (arrows) for chooser hover
 
 // ── Helpers ────────────────────────────────────────────────────────
 function esc(s) {
@@ -798,6 +832,7 @@ function fitMapToCorridor(corrId) {
 function initMapClickDeselect() {
   if (!googleMap) return;
   googleMap.addListener('click', () => {
+    if (mergeMode) return;
     deselectCorridor();
   });
   googleMap.addListener('zoom_changed', updateDirMarkers);
@@ -1367,6 +1402,246 @@ function jumpToNextUnnamed() {
   alert('All segments are named! 🎉');
 }
 
+// ── Merge mode ─────────────────────────────────────────────────────
+function liveSegments() { return projectData ? projectData.segments : []; }
+
+function near2(a, b, tol = 1e-4) { return Math.abs(a[0]-b[0]) < tol && Math.abs(a[1]-b[1]) < tol; }
+
+// ids -> {ok, reason, order:[ids]} — mirrors merge.order_chain on the server.
+function validateChain(ids) {
+  const segs = ids.map(id => projectData.segments.find(s => s.id === id)).filter(Boolean);
+  if (segs.length < 2) return { ok: false, reason: 'Select at least two segments.', order: [] };
+  const start = s => s.coords[0], end = s => s.coords[s.coords.length - 1];
+  const starts = segs.filter(s => !segs.some(o => o !== s && near2(start(s), end(o))));
+  if (starts.length === 0) {
+    if (segs.length === 2 && near2(start(segs[0]), end(segs[1])) && near2(end(segs[0]), start(segs[1])))
+      return { ok: false, reason: 'Two segments run in opposite directions.', order: [] };
+    return { ok: false, reason: 'Segments form a loop.', order: [] };
+  }
+  if (starts.length > 1) return { ok: false, reason: "Segments don't connect end to end.", order: [] };
+  const order = [starts[0]]; const used = new Set([starts[0].id]); let cur = starts[0];
+  while (order.length < segs.length) {
+    const nxts = segs.filter(s => !used.has(s.id) && near2(end(cur), start(s)));
+    if (nxts.length === 0) return { ok: false, reason: "Segments don't connect end to end.", order: [] };
+    if (nxts.length > 1) return { ok: false, reason: 'Segments branch; pick a single path.', order: [] };
+    cur = nxts[0]; order.push(cur); used.add(cur.id);
+  }
+  return { ok: true, reason: `Connected chain of ${order.length}`, order: order.map(s => s.id) };
+}
+
+function enterMergeMode() {
+  if (!projectData) return;
+  mergeMode = true;
+  mergeSelection = new Set();
+  mergeName = '';
+  selectedCorrId = null; openCorrId = null;
+  const btn = document.getElementById('btn-merge');
+  btn.classList.add('active'); btn.textContent = 'Exit merge';
+  renderMergeMap();
+  renderMergePanel();
+}
+
+function exitMergeMode() {
+  mergeMode = false;
+  mergeSelection = new Set();
+  mergeName = '';
+  clearMergeOverlay();
+  document.getElementById('merge-chooser').style.display = 'none';
+  const btn = document.getElementById('btn-merge');
+  btn.classList.remove('active'); btn.textContent = 'Merge';
+  renderMap();
+  renderCorrList();
+}
+
+function toggleMergeSeg(id) {
+  if (mergeSelection.has(id)) mergeSelection.delete(id); else mergeSelection.add(id);
+  // Auto pre-fill the name when the selected segments share one saved name.
+  if (!mergeName) {
+    const names = [...new Set([...mergeSelection]
+      .map(sid => projectData.segments.find(s => s.id === sid))
+      .filter(Boolean).map(s => s.name).filter(Boolean))];
+    if (names.length === 1) mergeName = names[0];
+  }
+  renderMergeMap();
+  renderMergePanel();
+}
+
+function clearMergeOverlay() {
+  mergeOverlayPolylines.forEach(p => p.setMap(null));
+  mergeOverlayPolylines = [];
+  clearMergeHighlight();
+}
+function clearMergeHighlight() { mergeHighlight.forEach(m => m.setMap(null)); mergeHighlight = []; }
+
+function renderMergeMap() {
+  if (!googleMap || !projectData) return;
+  Object.values(corridorPolylines).forEach(pl => pl.setMap(null));
+  clearChildPolylines();
+  clearMergeOverlay();
+
+  liveSegments().forEach(seg => {
+    const path = lngLatToGM(seg.coords);
+    if (path.length < 2) return;
+    const sel = mergeSelection.has(seg.id);
+    const pl = new google.maps.Polyline({
+      path, map: googleMap,
+      strokeColor: sel ? '#6d3fbf' : (seg.named ? COLOR_NAMED : COLOR_UNNAMED),
+      strokeWeight: sel ? 8 : 6, strokeOpacity: 1, zIndex: sel ? 5 : 2
+    });
+    pl.addListener('click', (e) => onMergeMapClick(seg.id, e));
+    mergeOverlayPolylines.push(pl);
+    if (sel) {
+      const a = path[path.length - 2], b = path[path.length - 1];
+      const arrow = new google.maps.Marker({ position: b, map: googleMap, clickable: false, zIndex: 6,
+        icon: { path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW, scale: 3.5,
+                rotation: headingDeg(a, b), fillColor: '#6d3fbf', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 1 } });
+      mergeOverlayPolylines.push(arrow);
+    }
+  });
+}
+
+// On a polyline click, find ALL live segments whose geometry passes near the
+// click point; if >1 (overlapping twins), show the chooser, else toggle directly.
+function onMergeMapClick(segId, e) {
+  const candidates = liveSegments().filter(s => segmentNearLatLng(s, e.latLng));
+  if (candidates.length <= 1) { toggleMergeSeg(segId); return; }
+  showMergeChooser(candidates, e);
+}
+
+function segmentNearLatLng(seg, latLng) {
+  const proj = googleMap.getProjection();
+  if (!proj || !latLng) return false;
+  const scale = Math.pow(2, googleMap.getZoom());
+  const toPx = ll => { const p = proj.fromLatLngToPoint(ll); return { x: p.x * scale, y: p.y * scale }; };
+  const c = toPx(latLng);
+  const path = seg.coords.map(([lng, lat]) => toPx(new google.maps.LatLng(lat, lng)));
+  const TH = 8;
+  for (let i = 1; i < path.length; i++) {
+    if (ptSegDistPx(c, path[i-1], path[i]) <= TH) return true;
+  }
+  return false;
+}
+
+function ptSegDistPx(p, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const l2 = dx*dx + dy*dy;
+  let t = l2 ? ((p.x-a.x)*dx + (p.y-a.y)*dy) / l2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  const x = a.x + t*dx, y = a.y + t*dy;
+  return Math.hypot(p.x - x, p.y - y);
+}
+
+function showMergeChooser(candidates, e) {
+  const box = document.getElementById('merge-chooser');
+  box.innerHTML = candidates.map(s => {
+    const nm = s.name || s.route_name_imported || ('Segment ' + s.id);
+    const mark = mergeSelection.has(s.id) ? '✓ ' : '';
+    return `<div class="mch-row" data-id="${s.id}">${mark}${esc(nm)} · ${fmtLen(segLengthM(s.coords))}</div>`;
+  }).join('');
+  const ev = e.domEvent || {};
+  box.style.left = ((ev.clientX || 100) + 6) + 'px';
+  box.style.top  = ((ev.clientY || 100) + 6) + 'px';
+  box.style.display = 'block';
+  // Ignore the document-level outside-click fired by this very opening click.
+  box.dataset.justOpened = '1';
+  setTimeout(() => { delete box.dataset.justOpened; }, 0);
+  box.querySelectorAll('.mch-row').forEach(row => {
+    const id = Number(row.dataset.id);
+    row.addEventListener('mouseenter', () => highlightSegOnMap(id));
+    row.addEventListener('mouseleave', clearMergeHighlight);
+    row.addEventListener('click', () => { box.style.display = 'none'; clearMergeHighlight(); toggleMergeSeg(id); });
+  });
+}
+
+function highlightSegOnMap(id) {
+  clearMergeHighlight();
+  const seg = projectData.segments.find(s => s.id === id);
+  if (!seg) return;
+  const path = lngLatToGM(seg.coords);
+  if (path.length < 2) return;
+  const hl = new google.maps.Polyline({ path, map: googleMap, strokeColor: '#f59e0b', strokeWeight: 10, strokeOpacity: .9, zIndex: 20, clickable: false });
+  const a = path[path.length - 2], b = path[path.length - 1];
+  const arrow = new google.maps.Marker({ position: b, map: googleMap, clickable: false, zIndex: 21,
+    icon: { path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW, scale: 4, rotation: headingDeg(a, b), fillColor: '#f59e0b', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 1 } });
+  mergeHighlight.push(hl, arrow);
+}
+
+function renderMergePanel() {
+  const container = document.getElementById('corridor-list');
+  if (!projectData) { container.innerHTML = ''; return; }
+  const ids = [...mergeSelection];
+  const v = validateChain(ids);
+  const orderIndex = {}; v.order.forEach((id, i) => orderIndex[id] = i + 1);
+
+  const rowHtml = (seg) => {
+    const sel = mergeSelection.has(seg.id);
+    const num = orderIndex[seg.id] || '';
+    const nm = seg.name || seg.route_name_imported || ('Segment ' + seg.id);
+    return `<div class="merge-seg-row${sel ? ' sel' : ''}" data-id="${seg.id}">
+      <span class="ms-badge">${num}</span>
+      <span class="ms-name">${esc(nm)}</span>
+      <span class="ms-len">${fmtLen(segLengthM(seg.coords))}</span></div>`;
+  };
+
+  const items = getVisibleCorridors().filter(c => itemMatchesSearch(c));
+  const corrItems = items.filter(i => !i.isStandalone);
+  const saItems = items.filter(i => i.isStandalone);
+
+  let listHtml = '';
+  corrItems.forEach(g => {
+    listHtml += `<div class="merge-group-h">${esc(g.name || g.cor_code)}</div>` +
+      segmentsOfItem(g).map(rowHtml).join('');
+  });
+  if (saItems.length) {
+    listHtml += `<div class="merge-group-h">Standalone</div>` +
+      saItems.map(g => segmentsOfItem(g)).flat().map(rowHtml).join('');
+  }
+
+  const bannerTxt = ids.length < 2
+    ? (ids.length ? 'Pick one more connected segment' : 'Click segments to merge (map or list)')
+    : (v.ok ? '✓ ' + v.reason : '✗ ' + v.reason);
+
+  container.innerHTML = `
+    <div id="merge-controls">
+      <div class="mc-row"><strong>Merge</strong> · <span>${ids.length} selected</span>
+        <span style="flex:1"></span>
+        <button id="btn-cancel-merge">Cancel</button></div>
+      <div class="mc-banner ${v.ok ? 'mc-ok' : 'mc-bad'}">${esc(bannerTxt)}</div>
+      <input id="merge-name" type="text" placeholder="Name (optional)…" value="${esc(mergeName)}"/>
+      <button id="btn-do-merge" ${v.ok ? '' : 'disabled'}>Merge ${ids.length || ''} → 1</button>
+    </div>
+    ${listHtml}
+  `;
+
+  container.querySelectorAll('.merge-seg-row').forEach(row =>
+    row.addEventListener('click', () => toggleMergeSeg(Number(row.dataset.id))));
+  document.getElementById('btn-cancel-merge').addEventListener('click', exitMergeMode);
+  document.getElementById('btn-do-merge').addEventListener('click', doMerge);
+  document.getElementById('merge-name').addEventListener('input', e => { mergeName = e.target.value; });
+}
+
+async function doMerge() {
+  const ids = [...mergeSelection];
+  try {
+    const res = await apiFetch(`/api/projects/${currentProjectId}/merge`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ segment_ids: ids, name: mergeName })
+    });
+    exitMergeMode();
+    projectData = await apiFetch(`/api/projects/${currentProjectId}`);
+    updateProgressUI();
+    renderCorrList();
+    renderMap();
+    if (res.merged_segment_id) {
+      const corrId = res.corridor_id !== null ? res.corridor_id : ('sa_' + res.merged_segment_id);
+      selectCorridor(corrId, 'merge');
+    }
+    showSaveIndicator();
+  } catch (err) {
+    alert('Merge failed: ' + err.message);
+  }
+}
+
 // ── Home / project list ───────────────────────────────────────────
 async function loadProjects() {
   const list = document.getElementById('project-list');
@@ -1429,6 +1704,7 @@ async function openProject(id) {
   document.getElementById('project-name-label').textContent = projectData.project.name;
   document.getElementById('header-progress').style.display = 'flex';
   document.getElementById('btn-next-unnamed').style.display = 'block';
+  document.getElementById('btn-merge').style.display = 'block';
 
   updateProgressUI();
   renderCorrList();
@@ -1482,10 +1758,14 @@ function setFilter(f) {
 // ── Keyboard ──────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
+    const box = document.getElementById('merge-chooser');
+    if (box && box.style.display === 'block') { box.style.display = 'none'; clearMergeHighlight(); return; }
+    if (mergeMode) { exitMergeMode(); return; }
     deselectCorridor();
     return;
   }
   if (e.key === 'Enter') {
+    if (mergeMode) return;
     // Only trigger next-unnamed if no input is focused
     if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
     jumpToNextUnnamed();
@@ -1562,6 +1842,8 @@ async function boot() {
   document.getElementById('btn-back').addEventListener('click', () => {
     // Flush any pending debounced saves before tearing down project state
     flushPendingSaves();
+    if (mergeMode) exitMergeMode();
+    document.getElementById('btn-merge').style.display = 'none';
     // Return to home
     selectedCorrId = null;
     openCorrId = null;
@@ -1582,6 +1864,15 @@ async function boot() {
 
   document.getElementById('btn-next-unnamed').addEventListener('click', jumpToNextUnnamed);
   document.getElementById('btn-export').addEventListener('click', triggerExport);
+  document.getElementById('btn-merge').addEventListener('click', () => mergeMode ? exitMergeMode() : enterMergeMode());
+
+  // Dismiss the overlap chooser when clicking outside it.
+  document.addEventListener('click', e => {
+    const box = document.getElementById('merge-chooser');
+    if (box && box.style.display === 'block' && !box.dataset.justOpened && !e.target.closest('#merge-chooser')) {
+      box.style.display = 'none'; clearMergeHighlight();
+    }
+  });
 
   document.getElementById('file-input').addEventListener('change', e => {
     if (e.target.files[0]) handleImport(e.target.files[0]);
